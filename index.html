@@ -10,13 +10,16 @@
   <title>Presupuesto 50/30/20 | PWA con IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Librerías para exportar PDF y Excel (CSV) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body class="bg-[#eef2f5] font-sans antialiased">
 
   <main class="max-w-md mx-auto px-4 pt-6 pb-24">
     
-    <!-- DASHBOARD -->
+    <!-- DASHBOARD (sin cambios relevantes, pero lo incluyo completo para mantener coherencia) -->
     <div id="tab-dashboard" class="tab-content space-y-6">
       <div class="neumorph-card p-5 rounded-2xl text-center">
         <h1 class="text-2xl font-bold text-gray-800">💰 50/30/20</h1>
@@ -43,7 +46,7 @@
           <h2 class="text-xs font-bold text-indigo-950 uppercase tracking-wider">Registro Inteligente por IA</h2>
         </div>
         <div class="flex gap-2">
-          <input type="text" id="aiInput" placeholder="Ej: gasté 35 en gasolina del carro..." class="flex-1 p-3 rounded-xl bg-white/80 shadow-inner text-sm border border-indigo-50 focus:outline-indigo-300">
+          <input type="text" id="aiInput" placeholder="Ej: gasté 35 en gasolina ayer ..." class="flex-1 p-3 rounded-xl bg-white/80 shadow-inner text-sm border border-indigo-50 focus:outline-indigo-300">
           <button id="aiProcessBtn" class="px-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-transform">Procesar</button>
         </div>
         <p id="aiFeedback" class="text-[11px] text-gray-500 mt-1.5 px-1 hidden"></p>
@@ -108,7 +111,7 @@
       <div id="alertsContainer" class="space-y-2"></div>
     </div>
 
-    <!-- INGRESOS -->
+    <!-- INGRESOS (aquí añadimos botones de exportación) -->
     <div id="tab-income" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">📅 Período Quincenal Activo</h2>
@@ -119,6 +122,16 @@
             <button id="setSalaryBtn" class="flex-1 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-md">✨ Iniciar Quincena</button>
             <button id="editSalaryBtn" class="flex-1 py-3 rounded-xl font-bold text-gray-700 bg-amber-400 shadow-md">✏️ Editar Datos</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Exportación de reportes -->
+      <div class="neumorph-card p-5 rounded-2xl border border-blue-200 bg-blue-50/30">
+        <h2 class="text-md font-bold text-blue-900">📄 Reportes y Exportación</h2>
+        <div class="space-y-3 mt-3">
+          <button id="exportCSVBtn" class="w-full py-3 rounded-xl font-bold text-white bg-blue-600 shadow-md flex items-center justify-center gap-2">📊 Exportar Mes Actual (CSV/Excel)</button>
+          <button id="exportPDFBtn" class="w-full py-3 rounded-xl font-bold text-white bg-purple-600 shadow-md flex items-center justify-center gap-2">📑 Exportar Mes Actual (PDF)</button>
+          <p class="text-xs text-gray-500 text-center">Los archivos se guardarán donde tú elijas (puedes crear una carpeta "DINERO618" y seleccionarla la primera vez).</p>
         </div>
       </div>
 
@@ -136,7 +149,7 @@
       </div>
     </div>
 
-    <!-- GASTOS MANUALES -->
+    <!-- GASTOS MANUALES (igual que antes) -->
     <div id="tab-expenses" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">➕ Registrar gasto manual</h2>
@@ -149,9 +162,7 @@
               <option value="Deseos">Deseos</option>
               <option value="Ahorro/Deuda">Ahorro / Deuda</option>
             </select>
-            <select id="expenseSubcategory" class="p-3 rounded-xl bg-white/80 shadow-inner text-sm">
-              <!-- Se llena dinámicamente desde JS -->
-            </select>
+            <select id="expenseSubcategory" class="p-3 rounded-xl bg-white/80 shadow-inner text-sm"></select>
           </div>
           <button id="addExpenseBtn" class="w-full py-3 rounded-xl font-bold bg-emerald-600 text-white shadow-md">➕ Descontar Gasto del Saldo</button>
         </div>
@@ -180,7 +191,7 @@
     </div>
   </main>
 
-  <!-- Barra de navegación -->
+  <!-- Barra de navegación inferior (sin cambios) -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 shadow-lg z-10">
     <div class="max-w-md mx-auto flex justify-around items-center py-2 px-4">
       <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-indigo-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg><span class="text-xs">Inicio</span></button>
@@ -192,17 +203,17 @@
 
   <script src="./app.js"></script>
   <script>
-    // Subcategorías dinámicas (para el formulario de gastos)
-    const categorySelect = document.getElementById('expenseCategory');
-    const subcategorySelect = document.getElementById('expenseSubcategory');
-    const subcategoriesMap = {
+    // Subcategorías dinámicas para gastos manuales
+    const catSelect = document.getElementById('expenseCategory');
+    const subcatSelect = document.getElementById('expenseSubcategory');
+    const subMap = {
       'Necesidades': ["🍔 Comida y Súper", "🚗 Gasolina y Carro", "🏥 Salud", "🏠 Servicios"],
       'Deseos': ["🎮 Juegos y Ocio", "🍽️ Salidas", "🛍️ Compras", "🔄 Otros"],
       'Ahorro/Deuda': ["💰 Fondo de Ahorro", "💳 Pago Tarjeta/Prestamo"]
     };
-    function updateSubcats() { const list = subcategoriesMap[categorySelect.value] || []; subcategorySelect.innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join(''); }
-    categorySelect.addEventListener('change', updateSubcats);
-    updateSubcats();
+    function updateSubcat() { subcatSelect.innerHTML = (subMap[catSelect.value] || []).map(s => `<option value="${s}">${s}</option>`).join(''); }
+    catSelect.addEventListener('change', updateSubcat);
+    updateSubcat();
   </script>
 </body>
 </html>

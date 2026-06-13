@@ -1,4 +1,4 @@
-// app.js - Presupuesto 50/30/20 con Saldo Principal y nuevo diseño visual
+// app_3.js - Administrador de presupuesto quincenal con control de Saldo Real Activo
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -17,7 +17,6 @@ const DEFAULT_SERVICES = [
   { id: 6, name: "Prime Video", amount: 14.99, category: "Deseos", dueDay: 13 },
   { id: 7, name: "Wifi", amount: 70, category: "Necesidades", dueDay: 14 },
   { id: 8, name: "Seguro de Carro", amount: 170, category: "Necesidades", dueDay: 16 },
-  { id: 9, name: "Streaming", amount: 15, category: "Deseos", dueDay: 17 },
   { id: 10, name: "Google One", amount: 1.99, category: "Necesidades", dueDay: 23 }
 ];
 
@@ -30,19 +29,19 @@ let paidServiceIds = [];
 let mainBalance = 0;
 let budgetChart = null;
 
-// Referencias DOM
+// Referencias DOM globales
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
 let needsAllocDetail, wantsAllocDetail;
 let needsCommitted, wantsCommitted;
 let needsSpent, wantsSpent;
 let needsFree, wantsFree;
-let expenseListContainer, alertsContainer, servicesListContainer, agendaContainer;
+let expenseListContainer, alertsContainer, servicesListContainer;
 
-// ========== FUNCIONES AUXILIARES ==========
 function calculateAllocations(salary) {
   return { needs: salary * 0.5, wants: salary * 0.3, savings: salary * 0.2 };
 }
+
 function getSpentByCategory() {
   let spentNeeds = 0, spentWants = 0, spentSavings = 0;
   expenses.forEach(exp => {
@@ -52,14 +51,17 @@ function getSpentByCategory() {
   });
   return { spentNeeds, spentWants, spentSavings };
 }
+
 function getFortnightFromDate(dateStr) {
   if (!dateStr) return '';
   const day = new Date(dateStr).getDate();
   return day <= 15 ? 'first' : 'second';
 }
+
 function getDueDayRange(fortnight) {
   return fortnight === 'first' ? { min: 1, max: 15 } : { min: 16, max: 31 };
 }
+
 function calculateCommittedByCategory(category) {
   if (!currentFortnight) return 0;
   const range = getDueDayRange(currentFortnight);
@@ -67,6 +69,7 @@ function calculateCommittedByCategory(category) {
     .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
     .reduce((sum, s) => sum + s.amount, 0);
 }
+
 function getCommittedServicesList(category) {
   if (!currentFortnight) return [];
   const range = getDueDayRange(currentFortnight);
@@ -74,6 +77,7 @@ function getCommittedServicesList(category) {
     .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
     .sort((a,b) => a.dueDay - b.dueDay);
 }
+
 function getTodaysDueServices() {
   const today = new Date().getDate();
   if (!currentFortnight) return [];
@@ -81,7 +85,7 @@ function getTodaysDueServices() {
   return services.filter(s => s.dueDay === today && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id));
 }
 
-// ========== PERSISTENCIA ==========
+// Persistencia
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY, currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE, salaryDate);
@@ -90,31 +94,25 @@ function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.PAID_SERVICES_IDS, JSON.stringify(paidServiceIds));
   localStorage.setItem(STORAGE_KEYS.MAIN_BALANCE, mainBalance.toString());
 }
+
 function loadFromLocalStorage() {
   const savedSalary = localStorage.getItem(STORAGE_KEYS.SALARY);
-  currentSalary = (savedSalary && !isNaN(parseFloat(savedSalary))) ? parseFloat(savedSalary) : 0;
+  currentSalary = savedSalary ? parseFloat(savedSalary) : 0;
   salaryDate = localStorage.getItem(STORAGE_KEYS.SALARY_DATE) || '';
   const savedExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
   expenses = savedExpenses ? JSON.parse(savedExpenses) : [];
-  if (!Array.isArray(expenses)) expenses = [];
   const savedServices = localStorage.getItem(STORAGE_KEYS.SERVICES);
-  if (savedServices) {
-    services = JSON.parse(savedServices);
-  } else {
-    services = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
-  }
+  services = savedServices ? JSON.parse(savedServices) : JSON.parse(JSON.stringify(DEFAULT_SERVICES));
   const savedPaid = localStorage.getItem(STORAGE_KEYS.PAID_SERVICES_IDS);
   paidServiceIds = savedPaid ? JSON.parse(savedPaid) : [];
   const savedBalance = localStorage.getItem(STORAGE_KEYS.MAIN_BALANCE);
-  mainBalance = (savedBalance && !isNaN(parseFloat(savedBalance))) ? parseFloat(savedBalance) : 0;
+  mainBalance = savedBalance ? parseFloat(savedBalance) : 0;
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// ========== REINICIAR PERÍODO (nuevo sueldo: se SUMA al saldo) ==========
+// Acciones principales
 function resetPeriod(newSalary, newDate) {
-  if (newSalary > 0) {
-    mainBalance += newSalary;
-  }
+  mainBalance = newSalary; // Al iniciar quincena, el saldo real se vuelve igual al sueldo base
   currentSalary = newSalary;
   salaryDate = newDate;
   currentFortnight = getFortnightFromDate(newDate);
@@ -122,323 +120,168 @@ function resetPeriod(newSalary, newDate) {
   paidServiceIds = [];
   saveToLocalStorage();
   refreshUI();
-  renderAlerts();
 }
 
-// ========== MODIFICAR SOLO PRESUPUESTO (no afecta saldo) ==========
-function updateSalaryOnly(newSalary, newDate) {
-  if (!newSalary || newSalary <= 0) { alert('Sueldo > 0'); return false; }
-  if (!newDate) { alert('Selecciona fecha'); return false; }
-  currentSalary = newSalary;
-  salaryDate = newDate;
-  currentFortnight = getFortnightFromDate(newDate);
-  const alloc = calculateAllocations(currentSalary);
-  const { spentNeeds, spentWants } = getSpentByCategory();
-  const committedNeeds = calculateCommittedByCategory('Necesidades');
-  const committedWants = calculateCommittedByCategory('Deseos');
-  let warnings = [];
-  if (spentNeeds + committedNeeds > alloc.needs) warnings.push(`Necesidades: gastado+comprometido $${(spentNeeds+committedNeeds).toFixed(2)} > nuevo presupuesto $${alloc.needs.toFixed(2)}`);
-  if (spentWants + committedWants > alloc.wants) warnings.push(`Deseos: gastado+comprometido $${(spentWants+committedWants).toFixed(2)} > nuevo presupuesto $${alloc.wants.toFixed(2)}`);
-  if (warnings.length > 0) alert(`⚠️ El nuevo sueldo es bajo:\n${warnings.join('\n')}`);
-  saveToLocalStorage();
-  refreshUI();
-  return true;
-}
-
-// ========== REINICIAR SALDO PRINCIPAL A CERO ==========
-function resetMainBalance() {
-  if (confirm('¿Estás seguro de que quieres reiniciar el Saldo Principal a $0? Los gastos registrados seguirán existiendo, pero el dinero real se pondrá a cero.')) {
-    mainBalance = 0;
-    saveToLocalStorage();
-    refreshUI();
-    alert('Saldo Principal reiniciado a $0.');
-  }
-}
-
-// ========== AGREGAR GASTO (resta del saldo) ==========
-function addExpense(description, amount, category, subcategory = "Manual") {
-  if (!currentSalary || currentSalary <= 0) {
-    alert('Primero establece un sueldo quincenal.');
+function addExtraIncome(description, amount) {
+  if (isNaN(amount) || amount <= 0) {
+    alert('Ingresa un monto válido mayor a 0.');
     return false;
   }
-  if (!description.trim() || amount <= 0) {
-    alert('Concepto y monto válidos.');
-    return false;
-  }
-  if (amount > mainBalance + 0.01) {
-    alert(`⚠️ Saldo principal insuficiente. Disponible: $${mainBalance.toFixed(2)}`);
-    return false;
-  }
-  const alloc = calculateAllocations(currentSalary);
-  const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
-  const committedNeeds = calculateCommittedByCategory('Necesidades');
-  const committedWants = calculateCommittedByCategory('Deseos');
+  const desc = description.trim() || "Ingreso Extra";
+  mainBalance += amount; // SUMA AL SALDO REAL DISPONIBLE
   
-  let currentSpent = 0, limit = 0, committed = 0;
-  if (category === 'Necesidades') {
-    currentSpent = spentNeeds;
-    limit = alloc.needs;
-    committed = committedNeeds;
-  } else if (category === 'Deseos') {
-    currentSpent = spentWants;
-    limit = alloc.wants;
-    committed = committedWants;
-  } else {
-    if (spentSavings + amount > alloc.savings + 0.01) {
-      alert(`Excedes presupuesto de Ahorro. Disponible: $${(alloc.savings - spentSavings).toFixed(2)}`);
-      return false;
-    }
-    mainBalance -= amount;
-    expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory });
-    saveToLocalStorage();
-    refreshUI();
-    return true;
-  }
-  const freeReal = limit - currentSpent - committed;
-  if (amount > freeReal + 0.01) {
-    alert(`⚠️ No tienes suficiente presupuesto. Libre real: $${Math.max(0, freeReal).toFixed(2)}`);
-    return false;
-  }
-  mainBalance -= amount;
-  expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory });
+  // Guardamos el ingreso extra como un gasto "negativo" para rastrearlo visualmente si deseas, 
+  // o simplemente actualizamos el balance. Lo dejaremos registrado en el historial como abono.
+  expenses.push({ id: Date.now(), description: `✨ GANANCIA: ${desc}`, amount: -amount, category: 'Ingreso', subcategory: 'Extra' });
+  
   saveToLocalStorage();
   refreshUI();
   return true;
 }
 
-// ========== ELIMINAR GASTO (devuelve dinero al saldo) ==========
+function addExpense(description, amount, category, subcategory = "Manual") {
+  if (isNaN(amount) || amount <= 0) {
+    alert('Ingresa un monto válido.');
+    return false;
+  }
+  if (amount > mainBalance) {
+    alert(`⚠️ Saldo insuficiente en tu cuenta real. Tienes: $${mainBalance.toFixed(2)}`);
+    return false;
+  }
+
+  mainBalance -= amount; // RESTA DE TU CAJA DE DINERO REAL
+  expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory });
+  
+  saveToLocalStorage();
+  refreshUI();
+  return true;
+}
+
 function deleteExpenseById(id) {
-  const expense = expenses.find(exp => exp.id === id);
-  if (expense) {
-    mainBalance += expense.amount;
+  const target = expenses.find(exp => exp.id === id);
+  if (target) {
+    // Si era un gasto normal devuelve, si era ingreso extra resta al borrarlo
+    mainBalance += (target.amount); 
     expenses = expenses.filter(exp => exp.id !== id);
     saveToLocalStorage();
     refreshUI();
   }
 }
 
-function renderExpenseList() {
-  if (!expenseListContainer) return;
-  if (expenses.length === 0) {
-    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay gastos aún.</div>';
-    return;
-  }
-  expenseListContainer.innerHTML = expenses.map(exp => `
-    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm">
-      <div class="flex-1">
-        <div class="font-medium text-gray-800 text-sm">${escapeHtml(exp.description)}</div>
-        <div class="flex gap-2 text-[11px] text-gray-500">${exp.category} • ${exp.subcategory}</div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="font-bold">$${exp.amount.toFixed(2)}</span>
-        <button class="delete-expense text-red-400" data-id="${exp.id}">🗑️</button>
-      </div>
-    </div>
-  `).join('');
-  document.querySelectorAll('.delete-expense').forEach(btn => {
-    btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id)));
-  });
-}
-
-// ========== SERVICIOS ==========
-function renderServicesList() {
-  if (!servicesListContainer) return;
-  if (services.length === 0) {
-    servicesListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📌 No hay servicios.</div>';
-    return;
-  }
-  servicesListContainer.innerHTML = services.map(s => `
-    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center">
-      <div>
-        <div class="font-medium">${escapeHtml(s.name)}</div>
-        <div class="text-xs text-gray-500">$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div>
-      </div>
-      <button class="delete-service text-red-500 text-xl" data-id="${s.id}">🗑️</button>
-    </div>
-  `).join('');
-  document.querySelectorAll('.delete-service').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = parseInt(btn.dataset.id);
-      services = services.filter(s => s.id !== id);
-      paidServiceIds = paidServiceIds.filter(pid => pid !== id);
-      saveToLocalStorage();
-      refreshUI();
-    });
-  });
-}
-
-function addService(name, amount, category, dueDay) {
-  if (!name.trim() || amount <= 0 || dueDay < 1 || dueDay > 31) {
-    alert('Completa nombre, monto >0 y día 1-31');
-    return false;
-  }
-  services.push({ id: Date.now(), name: name.trim(), amount: parseFloat(amount), category, dueDay: parseInt(dueDay) });
-  saveToLocalStorage();
-  refreshUI();
-  return true;
-}
-
-function resetToDefaultServices() {
-  if (confirm('¿Restaurar servicios predeterminados?')) {
-    services = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
-    const existingIds = services.map(s => s.id);
-    paidServiceIds = paidServiceIds.filter(id => existingIds.includes(id));
-    saveToLocalStorage();
-    refreshUI();
-  }
-}
-
-function renderAgenda() {
-  if (!agendaContainer) return;
-  const today = new Date();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
-  let upcoming = [];
-  services.forEach(service => {
-    let dueDate = new Date(currentYear, currentMonth, service.dueDay);
-    if (dueDate < today) dueDate = new Date(currentYear, currentMonth + 1, service.dueDay);
-    const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-    upcoming.push({ ...service, dueDate, daysLeft: daysDiff });
-  });
-  upcoming.sort((a,b) => a.daysLeft - b.daysLeft);
-  if (upcoming.length === 0) {
-    agendaContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">🎉 No hay pagos.</div>';
-    return;
-  }
-  agendaContainer.innerHTML = upcoming.map(s => `
-    <div class="bg-white/50 rounded-xl p-3 flex justify-between items-center">
-      <div>
-        <div class="font-medium">${escapeHtml(s.name)}</div>
-        <div class="text-xs">${s.category} • $${s.amount.toFixed(2)}</div>
-      </div>
-      <div class="text-right"><span class="text-sm font-bold ${s.daysLeft === 0 ? 'text-red-600' : 'text-gray-600'}">
-        ${s.daysLeft === 0 ? 'Hoy' : s.daysLeft === 1 ? 'Mañana' : `En ${s.daysLeft} días`}
-      </span></div>
-    </div>
-  `).join('');
-}
-
-function renderAlerts() {
-  if (!alertsContainer) return;
-  const dueToday = getTodaysDueServices();
-  if (dueToday.length === 0) {
-    alertsContainer.innerHTML = '';
-    return;
-  }
-  alertsContainer.innerHTML = dueToday.map(s => `
-    <div class="alert-card rounded-xl p-4 flex justify-between items-center">
-      <div><div class="font-bold text-amber-800">⚠️ Hoy vence: ${escapeHtml(s.name)}</div><div class="text-sm">$${s.amount.toFixed(2)} • ${s.category}</div></div>
-      <button class="pay-service-btn bg-emerald-500 text-white px-3 py-2 rounded-xl text-sm shadow-md" data-id="${s.id}" data-name="${escapeHtml(s.name)}" data-amount="${s.amount}" data-category="${s.category}">✅ Pagar</button>
-    </div>
-  `).join('');
-  document.querySelectorAll('.pay-service-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = parseInt(btn.dataset.id);
-      const name = btn.dataset.name;
-      const amount = parseFloat(btn.dataset.amount);
-      const category = btn.dataset.category;
-      if (confirm(`Registrar pago de "${name}" por $${amount.toFixed(2)}?`)) {
-        if (!paidServiceIds.includes(id)) {
-          paidServiceIds.push(id);
-          addExpense(`${name} (pago recurrente)`, amount, category, "Pago automático");
-        } else alert('Ya pagado este período.');
-      }
-    });
-  });
-}
-
-// ========== ACTUALIZACIÓN DE UI (con buildFreeBoxHTML mejorada) ==========
 function refreshUI() {
   if (!salaryDisplay) return;
   const alloc = calculateAllocations(currentSalary);
   const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
-  
+
+  // Mantener fijo tu recordatorio de depósito
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
-  salaryDateDisplay.textContent = salaryDate ? `Período: ${salaryDate}` : 'Sin fecha';
-  fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera quincena (días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda quincena (días 16-31)' : '');
-  mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
+  salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha registrada';
+  fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
   
-  needsAlloc.textContent = wantsAlloc.textContent = savingsAlloc.textContent = '—';
-  needsAllocDetail.textContent = wantsAllocDetail.textContent = '—';
-  if (currentSalary) {
-    needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
-    wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
-    savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
-    needsAllocDetail.textContent = `$${alloc.needs.toFixed(2)}`;
-    wantsAllocDetail.textContent = `$${alloc.wants.toFixed(2)}`;
-  }
+  // Mostrar saldo real de caja actualizable
+  mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
+
+  // Distribución teórica
+  needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
+  wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
+  savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
+  needsAllocDetail.textContent = `$${alloc.needs.toFixed(2)}`;
+  wantsAllocDetail.textContent = `$${alloc.wants.toFixed(2)}`;
+
   needsCommitted.textContent = `$${committedNeeds.toFixed(2)}`;
   wantsCommitted.textContent = `$${committedWants.toFixed(2)}`;
   needsSpent.textContent = `$${spentNeeds.toFixed(2)}`;
   wantsSpent.textContent = `$${spentWants.toFixed(2)}`;
-  
+
+  // Cálculos de disponibles internos
   const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
   const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
-  
-  const committedServicesNeeds = getCommittedServicesList('Necesidades');
-  const committedServicesWants = getCommittedServicesList('Deseos');
-  
-  const getSubcategoryBreakdown = (category) => {
-    const filtered = expenses.filter(exp => exp.category === category && exp.subcategory !== "Pago automático");
-    const breakdown = {};
-    filtered.forEach(exp => { breakdown[exp.subcategory] = (breakdown[exp.subcategory] || 0) + exp.amount; });
-    return breakdown;
-  };
-  const needsBreakdown = getSubcategoryBreakdown('Necesidades');
-  const wantsBreakdown = getSubcategoryBreakdown('Deseos');
-  
-  // --- NUEVA FUNCIÓN CON ESTILOS MEJORADOS ---
-  const buildFreeBoxHTML = (freeAmount, committedServices, manualBreakdown) => {
-    let html = `<div class="text-lg font-black text-emerald-700">$${Math.max(0, freeAmount).toFixed(2)}</div>`;
-    
-    // Sección: Próximos pagos (comprometidos)
-    if (committedServices.length > 0) {
-      html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="bg-amber-50/60 p-2 rounded-xl mb-2 text-amber-900">`;
-      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">📌 Próximos pagos</div>`;
-      html += `<div class="space-y-1 mt-1">`;
-      committedServices.forEach(s => {
-        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(s.name)} (día ${s.dueDay})</span><span class="font-mono font-semibold">$${s.amount.toFixed(2)}</span></div>`;
-      });
-      html += `</div></div>`;
-    }
-    
-    // Sección: Gastos variables manuales
-    const manualEntries = Object.entries(manualBreakdown);
-    if (manualEntries.length > 0) {
-      if (committedServices.length === 0) html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="bg-blue-50/60 p-2 rounded-xl text-blue-900">`;
-      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">✍️ Gastos variables</div>`;
-      html += `<div class="space-y-1 mt-1">`;
-      manualEntries.forEach(([sub, amount]) => {
-        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(sub)}</span><span class="font-mono font-semibold">$${amount.toFixed(2)}</span></div>`;
-      });
-      html += `</div></div>`;
-    }
-    
-    // Mensaje cuando no hay nada
-    if (committedServices.length === 0 && manualEntries.length === 0) {
-      html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="text-xs text-gray-400 italic text-center py-1">✨ Sin consumos ni pagos futuros.</div>`;
-    }
-    
-    return html;
-  };
-  
-  needsFree.innerHTML = buildFreeBoxHTML(freeNeeds, committedServicesNeeds, needsBreakdown);
-  wantsFree.innerHTML = buildFreeBoxHTML(freeWants, committedServicesWants, wantsBreakdown);
-  
+
+  needsFree.textContent = `$${Math.max(0, freeNeeds).toFixed(2)}`;
+  wantsFree.textContent = `$${Math.max(0, freeWants).toFixed(2)}`;
+
+  // Renderizar listas auxiliares
+  renderExpenseList();
+  renderServicesList();
+  renderAlerts();
+
   if (budgetChart && currentSalary) {
-    budgetChart.data.datasets[0].data = [spentNeeds, spentWants, spentSavings];
+    budgetChart.data.datasets[0].data = [Math.max(0, spentNeeds), Math.max(0, spentWants), Math.max(0, spentSavings)];
     budgetChart.data.datasets[1].data = [alloc.needs, alloc.wants, alloc.savings];
     budgetChart.update();
   }
-  renderExpenseList();
-  renderServicesList();
-  renderAgenda();
-  renderAlerts();
+}
+
+function renderExpenseList() {
+  if (!expenseListContainer) return;
+  if (expenses.length === 0) {
+    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos registrados.</div>';
+    return;
+  }
+  expenseListContainer.innerHTML = expenses.map(exp => `
+    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm">
+      <div>
+        <div class="font-medium text-gray-800 text-sm">${escapeHtml(exp.description)}</div>
+        <div class="text-[11px] text-gray-400">${exp.category} • ${exp.subcategory}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">
+          ${exp.amount < 0 ? `+$${Math.abs(exp.amount).toFixed(2)}` : `$${exp.amount.toFixed(2)}`}
+        </span>
+        <button class="delete-expense text-red-400 p-1" data-id="${exp.id}">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.delete-expense').forEach(btn => {
+    btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id)));
+  });
+}
+
+function renderServicesList() {
+  if (!servicesListContainer) return;
+  servicesListContainer.innerHTML = services.map(s => `
+    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs">
+      <div>
+        <div class="font-bold text-gray-700">${escapeHtml(s.name)}</div>
+        <div>$${s.amount.toFixed(2)} • ${s.category} • Cobro el día ${s.dueDay}</div>
+      </div>
+      <button class="delete-service text-red-400" data-id="${s.id}">🗑️</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.delete-service').forEach(btn => {
+    btn.addEventListener('click', () => {
+      services = services.filter(item => item.id !== parseInt(btn.dataset.id));
+      saveToLocalStorage();
+      refreshUI();
+    });
+  });
+}
+
+function renderAlerts() {
+  if (!alertsContainer) return;
+  const todayDue = getTodaysDueServices();
+  if (todayDue.length === 0) {
+    alertsContainer.innerHTML = '';
+    return;
+  }
+  alertsContainer.innerHTML = todayDue.map(s => `
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs">
+      <div><span class="font-bold text-amber-800">⚠️ Hoy vence:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div>
+      <button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar ya</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.pay-service-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.id);
+      if (!paidServiceIds.includes(id)) {
+        paidServiceIds.push(id);
+        addExpense(`${btn.dataset.name} (Cobro Fijo)`, parseFloat(btn.dataset.amount), btn.dataset.category, "Automático");
+      }
+    });
+  });
 }
 
 function initChart() {
@@ -446,39 +289,30 @@ function initChart() {
   budgetChart = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: ['Necesidades', 'Deseos', 'Ahorro/Deuda'],
+      labels: ['Necesidades', 'Deseos', 'Ahorro'],
       datasets: [
-        { label: '💰 Gastado real', data: [0,0,0], backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 8 },
-        { label: '🎯 Presupuesto', data: [0,0,0], backgroundColor: 'rgba(156,163,175,0.4)', borderRadius: 8, borderWidth: 1, borderColor: '#6b7280' }
+        { label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 },
+        { label: 'Presupuestado', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }
       ]
     },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      plugins: { legend: { position: 'top', labels: { font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: $${ctx.raw.toFixed(2)}` } } },
-      scales: { y: { ticks: { callback: (val) => '$' + val }, beginAtZero: true } }
-    }
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
   });
 }
 
 function initTabs() {
   const tabs = document.querySelectorAll('.tab-btn');
   const contents = document.querySelectorAll('.tab-content');
-  function showTab(tabId) {
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
     contents.forEach(c => c.classList.add('hidden'));
-    const active = document.getElementById(`tab-${tabId}`);
-    if (active) active.classList.remove('hidden');
-    tabs.forEach(btn => {
-      if (btn.dataset.tab === tabId) btn.classList.add('active');
-      else btn.classList.remove('active');
-    });
-    if (tabId === 'dashboard' && budgetChart) setTimeout(() => { budgetChart.resize(); budgetChart.update(); }, 50);
-  }
-  tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
-  showTab('dashboard');
+    document.getElementById(`tab-${target}`).classList.remove('hidden');
+    tabs.forEach(t => t.classList.remove('text-indigo-600'));
+    btn.classList.add('text-indigo-600');
+  }));
 }
 
-// ========== EVENTOS Y ARRANQUE ==========
 document.addEventListener('DOMContentLoaded', () => {
+  // Enlazar DOM
   salaryDisplay = document.getElementById('salaryDisplay');
   salaryDateDisplay = document.getElementById('salaryDateDisplay');
   fortnightDisplay = document.getElementById('fortnightDisplay');
@@ -497,65 +331,51 @@ document.addEventListener('DOMContentLoaded', () => {
   expenseListContainer = document.getElementById('expenseListContainer');
   alertsContainer = document.getElementById('alertsContainer');
   servicesListContainer = document.getElementById('servicesListContainer');
-  agendaContainer = document.getElementById('agendaContainer');
-  
+
   initChart();
   loadFromLocalStorage();
-  refreshUI();
   initTabs();
-  
+  refreshUI();
+
+  // Escuchadores de eventos
   document.getElementById('setSalaryBtn').addEventListener('click', () => {
-    const raw = parseFloat(document.getElementById('salaryInput').value);
+    const val = parseFloat(document.getElementById('salaryInput').value);
     const date = document.getElementById('salaryDateInput').value;
-    if (isNaN(raw) || raw <= 0) { alert('Sueldo válido'); return; }
-    if (!date) { alert('Selecciona fecha'); return; }
-    resetPeriod(raw, date);
-    document.getElementById('salaryInput').value = '';
-    document.getElementById('salaryDateInput').value = '';
-    document.querySelector('.tab-btn[data-tab="dashboard"]').click();
+    if (val > 0 && date) {
+      resetPeriod(val, date);
+      document.getElementById('salaryInput').value = '';
+    } else { alert('Escribe un monto y selecciona una fecha'); }
   });
-  document.getElementById('updateSalaryOnlyBtn').addEventListener('click', () => {
-    const raw = parseFloat(document.getElementById('salaryInput').value);
-    const date = document.getElementById('salaryDateInput').value;
-    if (isNaN(raw) || raw <= 0) { alert('Sueldo válido'); return; }
-    if (!date) { alert('Selecciona fecha'); return; }
-    updateSalaryOnly(raw, date);
-    document.getElementById('salaryInput').value = '';
-    document.getElementById('salaryDateInput').value = '';
-    document.querySelector('.tab-btn[data-tab="dashboard"]').click();
+
+  document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
+    const desc = document.getElementById('extraIncomeDesc').value;
+    const amt = parseFloat(document.getElementById('extraIncomeAmount').value);
+    if (addExtraIncome(desc, amt)) {
+      document.getElementById('extraIncomeDesc').value = '';
+      document.getElementById('extraIncomeAmount').value = '';
+    }
   });
-  document.getElementById('resetBalanceBtn').addEventListener('click', resetMainBalance);
+
   document.getElementById('addExpenseBtn').addEventListener('click', () => {
     const desc = document.getElementById('expenseDesc').value;
-    const amount = parseFloat(document.getElementById('expenseAmount').value);
+    const amt = parseFloat(document.getElementById('expenseAmount').value);
     const cat = document.getElementById('expenseCategory').value;
     const sub = document.getElementById('expenseSubcategory').value;
-    if (addExpense(desc, amount, cat, sub)) {
+    if (addExpense(desc, amt, cat, sub)) {
       document.getElementById('expenseDesc').value = '';
       document.getElementById('expenseAmount').value = '';
     }
   });
+
   document.getElementById('clearExpensesBtn').addEventListener('click', () => {
-    if (confirm('¿Eliminar todos los gastos? Se devolverá el dinero al saldo principal.')) {
-      const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-      mainBalance += totalExpenses;
+    if (confirm('¿Limpiar todo el historial? El saldo regresará a su estado inicial.')) {
       expenses = [];
+      mainBalance = currentSalary;
+      paidServiceIds = [];
       saveToLocalStorage();
       refreshUI();
     }
   });
-  document.getElementById('addServiceBtn').addEventListener('click', () => {
-    const name = document.getElementById('serviceName').value;
-    const amount = parseFloat(document.getElementById('serviceAmount').value);
-    const category = document.getElementById('serviceCategory').value;
-    const dueDay = parseInt(document.getElementById('serviceDueDay').value);
-    if (addService(name, amount, category, dueDay)) {
-      document.getElementById('serviceName').value = '';
-      document.getElementById('serviceAmount').value = '';
-      document.getElementById('serviceDueDay').value = '';
-    }
-  });
-  document.getElementById('resetDefaultServicesBtn').addEventListener('click', resetToDefaultServices);
 });
 
 function escapeHtml(str) {

@@ -1,4 +1,4 @@
-// app_3.js - Administrador de presupuesto quincenal con control de Saldo Real Activo
+// app_3.js - Motor de control monetario real PWA
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -29,7 +29,7 @@ let paidServiceIds = [];
 let mainBalance = 0;
 let budgetChart = null;
 
-// Referencias DOM globales
+// Enlaces de pantalla
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
 let needsAllocDetail, wantsAllocDetail;
@@ -70,14 +70,6 @@ function calculateCommittedByCategory(category) {
     .reduce((sum, s) => sum + s.amount, 0);
 }
 
-function getCommittedServicesList(category) {
-  if (!currentFortnight) return [];
-  const range = getDueDayRange(currentFortnight);
-  return services
-    .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
-    .sort((a,b) => a.dueDay - b.dueDay);
-}
-
 function getTodaysDueServices() {
   const today = new Date().getDate();
   if (!currentFortnight) return [];
@@ -85,7 +77,7 @@ function getTodaysDueServices() {
   return services.filter(s => s.dueDay === today && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id));
 }
 
-// Persistencia
+// Almacenamiento
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY, currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE, salaryDate);
@@ -110,9 +102,9 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// Acciones principales
+// Operaciones Lógicas principales
 function resetPeriod(newSalary, newDate) {
-  mainBalance = newSalary; // Al iniciar quincena, el saldo real se vuelve igual al sueldo base
+  mainBalance = newSalary; 
   currentSalary = newSalary;
   salaryDate = newDate;
   currentFortnight = getFortnightFromDate(newDate);
@@ -124,16 +116,12 @@ function resetPeriod(newSalary, newDate) {
 
 function addExtraIncome(description, amount) {
   if (isNaN(amount) || amount <= 0) {
-    alert('Ingresa un monto válido mayor a 0.');
+    alert('Suma un monto real.');
     return false;
   }
-  const desc = description.trim() || "Ingreso Extra";
-  mainBalance += amount; // SUMA AL SALDO REAL DISPONIBLE
-  
-  // Guardamos el ingreso extra como un gasto "negativo" para rastrearlo visualmente si deseas, 
-  // o simplemente actualizamos el balance. Lo dejaremos registrado en el historial como abono.
-  expenses.push({ id: Date.now(), description: `✨ GANANCIA: ${desc}`, amount: -amount, category: 'Ingreso', subcategory: 'Extra' });
-  
+  const text = description.trim() || "Ingreso Extra";
+  mainBalance += amount; 
+  expenses.push({ id: Date.now(), description: `✨ GANANCIA: ${text}`, amount: -amount, category: 'Ingreso', subcategory: 'Extra' });
   saveToLocalStorage();
   refreshUI();
   return true;
@@ -145,13 +133,12 @@ function addExpense(description, amount, category, subcategory = "Manual") {
     return false;
   }
   if (amount > mainBalance) {
-    alert(`⚠️ Saldo insuficiente en tu cuenta real. Tienes: $${mainBalance.toFixed(2)}`);
+    alert(`⚠️ Dinero insuficiente en el saldo disponible. Tienes: $${mainBalance.toFixed(2)}`);
     return false;
   }
 
-  mainBalance -= amount; // RESTA DE TU CAJA DE DINERO REAL
+  mainBalance -= amount; 
   expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory });
-  
   saveToLocalStorage();
   refreshUI();
   return true;
@@ -160,8 +147,7 @@ function addExpense(description, amount, category, subcategory = "Manual") {
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
   if (target) {
-    // Si era un gasto normal devuelve, si era ingreso extra resta al borrarlo
-    mainBalance += (target.amount); 
+    mainBalance += target.amount; 
     expenses = expenses.filter(exp => exp.id !== id);
     saveToLocalStorage();
     refreshUI();
@@ -169,21 +155,20 @@ function deleteExpenseById(id) {
 }
 
 function refreshUI() {
-  if (!salaryDisplay) return;
+  if (!mainBalanceDisplay) return;
   const alloc = calculateAllocations(currentSalary);
   const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
 
-  // Mantener fijo tu recordatorio de depósito
+  // Escritura en pantalla
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
-  salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha registrada';
+  salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha';
   fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
   
-  // Mostrar saldo real de caja actualizable
+  // ¡ESTA ES LA CAJA QUE AHORA SE MUEVE EN VIVO!
   mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
 
-  // Distribución teórica
   needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
   wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
   savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
@@ -195,14 +180,12 @@ function refreshUI() {
   needsSpent.textContent = `$${spentNeeds.toFixed(2)}`;
   wantsSpent.textContent = `$${spentWants.toFixed(2)}`;
 
-  // Cálculos de disponibles internos
   const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
   const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
 
-  needsFree.textContent = `$${Math.max(0, freeNeeds).toFixed(2)}`;
-  wantsFree.textContent = `$${Math.max(0, freeWants).toFixed(2)}`;
+  needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
+  wantsFree.textContent = `$${freeWants.toFixed(2)}`;
 
-  // Renderizar listas auxiliares
   renderExpenseList();
   renderServicesList();
   renderAlerts();
@@ -217,13 +200,13 @@ function refreshUI() {
 function renderExpenseList() {
   if (!expenseListContainer) return;
   if (expenses.length === 0) {
-    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos registrados.</div>';
+    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos anotados.</div>';
     return;
   }
   expenseListContainer.innerHTML = expenses.map(exp => `
-    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm">
+    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm text-sm">
       <div>
-        <div class="font-medium text-gray-800 text-sm">${escapeHtml(exp.description)}</div>
+        <div class="font-medium text-gray-800">${escapeHtml(exp.description)}</div>
         <div class="text-[11px] text-gray-400">${exp.category} • ${exp.subcategory}</div>
       </div>
       <div class="flex items-center gap-2">
@@ -246,7 +229,7 @@ function renderServicesList() {
     <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs">
       <div>
         <div class="font-bold text-gray-700">${escapeHtml(s.name)}</div>
-        <div>$${s.amount.toFixed(2)} • ${s.category} • Cobro el día ${s.dueDay}</div>
+        <div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div>
       </div>
       <button class="delete-service text-red-400" data-id="${s.id}">🗑️</button>
     </div>
@@ -269,8 +252,8 @@ function renderAlerts() {
   }
   alertsContainer.innerHTML = todayDue.map(s => `
     <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs">
-      <div><span class="font-bold text-amber-800">⚠️ Hoy vence:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div>
-      <button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar ya</button>
+      <div><span class="font-bold text-amber-800">⚠️ Vence hoy:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div>
+      <button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar</button>
     </div>
   `).join('');
   document.querySelectorAll('.pay-service-btn').forEach(btn => {
@@ -292,7 +275,7 @@ function initChart() {
       labels: ['Necesidades', 'Deseos', 'Ahorro'],
       datasets: [
         { label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 },
-        { label: 'Presupuestado', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }
+        { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }
       ]
     },
     options: { responsive: true, scales: { y: { beginAtZero: true } } }
@@ -306,13 +289,16 @@ function initTabs() {
     const target = btn.dataset.tab;
     contents.forEach(c => c.classList.add('hidden'));
     document.getElementById(`tab-${target}`).classList.remove('hidden');
-    tabs.forEach(t => t.classList.remove('text-indigo-600'));
+    tabs.forEach(t => {
+      t.classList.remove('text-indigo-600');
+      t.classList.add('text-gray-500');
+    });
     btn.classList.add('text-indigo-600');
+    btn.classList.remove('text-gray-500');
   }));
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Enlazar DOM
   salaryDisplay = document.getElementById('salaryDisplay');
   salaryDateDisplay = document.getElementById('salaryDateDisplay');
   fortnightDisplay = document.getElementById('fortnightDisplay');
@@ -337,14 +323,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   refreshUI();
 
-  // Escuchadores de eventos
   document.getElementById('setSalaryBtn').addEventListener('click', () => {
     const val = parseFloat(document.getElementById('salaryInput').value);
     const date = document.getElementById('salaryDateInput').value;
     if (val > 0 && date) {
       resetPeriod(val, date);
       document.getElementById('salaryInput').value = '';
-    } else { alert('Escribe un monto y selecciona una fecha'); }
+      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
+    } else { alert('Ingresa un sueldo y una fecha válida.'); }
   });
 
   document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
@@ -353,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addExtraIncome(desc, amt)) {
       document.getElementById('extraIncomeDesc').value = '';
       document.getElementById('extraIncomeAmount').value = '';
+      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
     }
   });
 
@@ -364,14 +351,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addExpense(desc, amt, cat, sub)) {
       document.getElementById('expenseDesc').value = '';
       document.getElementById('expenseAmount').value = '';
+      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
     }
   });
 
   document.getElementById('clearExpensesBtn').addEventListener('click', () => {
-    if (confirm('¿Limpiar todo el historial? El saldo regresará a su estado inicial.')) {
+    if (confirm('¿Quieres limpiar el historial quincenal?')) {
       expenses = [];
       mainBalance = currentSalary;
       paidServiceIds = [];
+      saveToLocalStorage();
+      refreshUI();
+    }
+  });
+  
+  document.getElementById('resetBalanceBtn').addEventListener('click', () => {
+    if (confirm('¿Poner el dinero real a cero?')) {
+      mainBalance = 0;
       saveToLocalStorage();
       refreshUI();
     }

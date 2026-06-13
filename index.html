@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="./manifest.json">
-  <title>Presupuesto 50/30/20 | PWA</title>
+  <title>Presupuesto 50/30/20 | PWA con IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="./style.css">
@@ -16,21 +16,17 @@
 
   <main class="max-w-md mx-auto px-4 pt-6 pb-24">
     
-    <!-- PESTAÑA 1: DASHBOARD -->
+    <!-- DASHBOARD -->
     <div id="tab-dashboard" class="tab-content space-y-6">
       <div class="neumorph-card p-5 rounded-2xl text-center">
         <h1 class="text-2xl font-bold text-gray-800">💰 50/30/20</h1>
-        <p class="text-xs text-gray-500 mt-1">Presupuesto quincenal</p>
-        
-        <!-- Recordatorio del depósito base -->
+        <p class="text-xs text-gray-500 mt-1">Presupuesto quincenal inteligente</p>
         <div class="mt-3 flex justify-between text-sm bg-white/50 rounded-xl px-3 py-2 border border-gray-200">
           <span class="font-medium text-gray-600">Sueldo Depositado:</span>
           <span id="salaryDisplay" class="font-bold text-indigo-900">—</span>
         </div>
         <div class="text-[11px] text-gray-400 mt-1" id="salaryDateDisplay"></div>
         <div class="text-[11px] text-gray-500 mt-1" id="fortnightDisplay"></div>
-        
-        <!-- CAJA DE DINERO REAL ACTUALIZABLE -->
         <div class="mt-4 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 shadow-inner">
           <div class="flex justify-between items-center">
             <span class="text-sm font-bold text-emerald-900">🏦 Saldo Real Disponible:</span>
@@ -40,7 +36,34 @@
         </div>
       </div>
 
-      <!-- Tarjetas de distribución -->
+      <!-- IA Input -->
+      <div class="neumorph-card p-4 rounded-2xl bg-gradient-to-br from-indigo-50/40 to-purple-50/40 border border-indigo-100">
+        <div class="flex items-center gap-1.5 mb-2">
+          <span class="text-base">🤖</span>
+          <h2 class="text-xs font-bold text-indigo-950 uppercase tracking-wider">Registro Inteligente por IA</h2>
+        </div>
+        <div class="flex gap-2">
+          <input type="text" id="aiInput" placeholder="Ej: gasté 35 en gasolina del carro..." class="flex-1 p-3 rounded-xl bg-white/80 shadow-inner text-sm border border-indigo-50 focus:outline-indigo-300">
+          <button id="aiProcessBtn" class="px-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-transform">Procesar</button>
+        </div>
+        <p id="aiFeedback" class="text-[11px] text-gray-500 mt-1.5 px-1 hidden"></p>
+      </div>
+
+      <!-- Coach IA -->
+      <div class="neumorph-card p-4 rounded-2xl border border-amber-200 bg-amber-50/20">
+        <div class="flex justify-between items-center mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-base">🧠</span>
+            <h2 class="text-xs font-bold text-amber-950 uppercase tracking-wider">Análisis del Coach IA</h2>
+          </div>
+          <button id="refreshCoachBtn" class="text-[11px] text-indigo-600 font-semibold bg-white px-2 py-0.5 rounded-md shadow-sm border">Actualizar</button>
+        </div>
+        <div id="coachText" class="text-xs text-gray-700 leading-relaxed bg-white/60 p-3 rounded-xl border border-amber-100/70 shadow-inner min-h-[40px]">
+          Presiona "Actualizar" para que la IA evalúe tus finanzas actuales.
+        </div>
+      </div>
+
+      <!-- Tarjetas 50/30/20 -->
       <div class="grid grid-cols-3 gap-3">
         <div class="neumorph-card p-3 rounded-xl text-center">
           <p class="text-xs uppercase font-semibold text-indigo-700">Necesidades</p>
@@ -59,47 +82,24 @@
         </div>
       </div>
 
-      <!-- Desglose por categoría -->
+      <!-- Estado detallado -->
       <div class="neumorph-card p-4 rounded-2xl space-y-3">
         <h2 class="text-sm font-bold text-gray-700">📌 Estado por categoría</h2>
         <div class="bg-white/40 rounded-xl p-3">
-          <div class="flex justify-between text-sm">
-            <span class="font-semibold text-indigo-700">🏠 Necesidades</span>
-            <span>Límite: <span id="needsAllocDetail">$0</span></span>
-          </div>
-          <div class="flex justify-between text-xs mt-1">
-            <span>📅 Servicios fijos por pagar:</span>
-            <span class="font-bold text-amber-600" id="needsCommitted">$0</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span>✅ Total gastado:</span>
-            <span class="font-bold text-red-500" id="needsSpent">$0</span>
-          </div>
-          <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1">
-            <span>🟢 Cupo restante:</span>
-            <span id="needsFree" class="text-emerald-700 font-bold">$0.00</span>
-          </div>
+          <div class="flex justify-between text-sm"><span class="font-semibold text-indigo-700">🏠 Necesidades</span><span>Límite: <span id="needsAllocDetail">$0</span></span></div>
+          <div class="flex justify-between text-xs mt-1"><span>📅 Servicios fijos por pagar:</span><span class="font-bold text-amber-600" id="needsCommitted">$0</span></div>
+          <div class="flex justify-between text-xs"><span>✅ Total gastado:</span><span class="font-bold text-red-500" id="needsSpent">$0</span></div>
+          <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1"><span>🟢 Cupo restante:</span><span id="needsFree" class="text-emerald-700 font-bold"></span></div>
         </div>
         <div class="bg-white/40 rounded-xl p-3">
-          <div class="flex justify-between text-sm">
-            <span class="font-semibold text-amber-700">🎮 Deseos</span>
-            <span>Límite: <span id="wantsAllocDetail">$0</span></span>
-          </div>
-          <div class="flex justify-between text-xs mt-1">
-            <span>📅 Servicios fijos por pagar:</span>
-            <span class="font-bold text-amber-600" id="wantsCommitted">$0</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span>✅ Total gastado:</span>
-            <span class="font-bold text-red-500" id="wantsSpent">$0</span>
-          </div>
-          <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1">
-            <span>🟢 Cupo restante:</span>
-            <span id="wantsFree" class="text-emerald-700 font-bold">$0.00</span>
-          </div>
+          <div class="flex justify-between text-sm"><span class="font-semibold text-amber-700">🎮 Deseos</span><span>Límite: <span id="wantsAllocDetail">$0</span></span></div>
+          <div class="flex justify-between text-xs mt-1"><span>📅 Servicios fijos por pagar:</span><span class="font-bold text-amber-600" id="wantsCommitted">$0</span></div>
+          <div class="flex justify-between text-xs"><span>✅ Total gastado:</span><span class="font-bold text-red-500" id="wantsSpent">$0</span></div>
+          <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1"><span>🟢 Cupo restante:</span><span id="wantsFree" class="text-emerald-700 font-bold"></span></div>
         </div>
       </div>
 
+      <!-- Gráfica -->
       <div class="neumorph-card p-4 rounded-2xl">
         <h2 class="text-sm font-semibold text-gray-700 mb-2">📊 Estado vs Presupuesto</h2>
         <canvas id="budgetChart" width="400" height="200" class="w-full h-auto max-h-52"></canvas>
@@ -108,31 +108,26 @@
       <div id="alertsContainer" class="space-y-2"></div>
     </div>
 
-    <!-- PESTAÑA 2: INGRESOS (Con botón de edición añadido) -->
+    <!-- INGRESOS -->
     <div id="tab-income" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">📅 Período Quincenal Activo</h2>
-        <p class="text-xs text-gray-500 mb-3">Establece o corrige los datos base de tu depósito quincenal.</p>
-        
         <div class="space-y-3">
-          <input type="number" id="salaryInput" placeholder="Sueldo quincenal (ej: 2500)" inputmode="numeric" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
+          <input type="number" id="salaryInput" placeholder="Sueldo quincenal (ej: 2500)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <input type="date" id="salaryDateInput" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
-          
           <div class="flex gap-2">
             <button id="setSalaryBtn" class="flex-1 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-md">✨ Iniciar Quincena</button>
-            <button id="editSalaryBtn" class="hidden flex-1 py-3 rounded-xl font-bold text-gray-700 bg-amber-400 shadow-md">✏️ Editar Datos</button>
+            <button id="editSalaryBtn" class="flex-1 py-3 rounded-xl font-bold text-gray-700 bg-amber-400 shadow-md">✏️ Editar Datos</button>
           </div>
         </div>
       </div>
 
-      <!-- CAJA PARA INGRESOS EXTRAS -->
       <div class="neumorph-card p-5 rounded-2xl border border-emerald-200 bg-emerald-50/30">
         <h2 class="text-md font-bold text-emerald-900">➕ Agregar Dinero Extra (Ganancia)</h2>
-        <p class="text-xs text-gray-500 mb-3">Suma dinero directamente a tu saldo disponible (ventas, extras, etc.)</p>
         <div class="space-y-3">
           <input type="text" id="extraIncomeDesc" placeholder="¿De qué es este dinero?" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
-          <input type="number" id="extraIncomeAmount" placeholder="Monto ($)" inputmode="numeric" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
-          <button id="addExtraIncomeBtn" class="w-full py-3 rounded-xl font-bold text-white bg-emerald-600 shadow-md shadow-emerald-200">💰 Sumar al Saldo Real</button>
+          <input type="number" id="extraIncomeAmount" placeholder="Monto ($)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
+          <button id="addExtraIncomeBtn" class="w-full py-3 rounded-xl font-bold text-white bg-emerald-600 shadow-md">💰 Sumar al Saldo Real</button>
         </div>
       </div>
 
@@ -141,11 +136,11 @@
       </div>
     </div>
 
-    <!-- PESTAÑA 3: GASTOS -->
+    <!-- GASTOS MANUALES -->
     <div id="tab-expenses" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">➕ Registrar gasto manual</h2>
-        <div class="mt-3 space-y-3">
+        <div class="space-y-3">
           <input type="text" id="expenseDesc" placeholder="Concepto (ej: Súper)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <input type="number" id="expenseAmount" placeholder="Monto ($)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <div class="grid grid-cols-2 gap-3">
@@ -155,88 +150,59 @@
               <option value="Ahorro/Deuda">Ahorro / Deuda</option>
             </select>
             <select id="expenseSubcategory" class="p-3 rounded-xl bg-white/80 shadow-inner text-sm">
-              <!-- Dinámico -->
+              <!-- Se llena dinámicamente desde JS -->
             </select>
           </div>
           <button id="addExpenseBtn" class="w-full py-3 rounded-xl font-bold bg-emerald-600 text-white shadow-md">➕ Descontar Gasto del Saldo</button>
         </div>
       </div>
       <div class="neumorph-card p-5 rounded-2xl">
-        <div class="flex justify-between items-center">
-          <h2 class="text-md font-bold text-gray-800">📋 Historial de movimientos</h2>
-          <button id="clearExpensesBtn" class="text-xs text-red-500 bg-white/50 px-3 py-1 rounded-full">Borrar todo</button>
-        </div>
+        <div class="flex justify-between items-center"><h2 class="text-md font-bold text-gray-800">📋 Historial de movimientos</h2><button id="clearExpensesBtn" class="text-xs text-red-500 bg-white/50 px-3 py-1 rounded-full">Borrar todo</button></div>
         <div id="expenseListContainer" class="mt-4 max-h-64 overflow-y-auto space-y-2 pr-1"></div>
       </div>
     </div>
 
-    <!-- PESTAÑA 4: CALENDARIO -->
+    <!-- CALENDARIO / SERVICIOS -->
     <div id="tab-calendar" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">📌 Agregar servicio recurrente</h2>
-        <div class="mt-3 space-y-3">
+        <div class="space-y-3">
           <input type="text" id="serviceName" placeholder="Nombre (ej: Spotify)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <input type="number" id="serviceAmount" placeholder="Monto mensual" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <div class="grid grid-cols-2 gap-3">
-            <select id="serviceCategory" class="p-3 rounded-xl bg-white/80 shadow-inner">
-              <option value="Necesidades">Necesidades</option>
-              <option value="Deseos">Deseos</option>
-            </select>
+            <select id="serviceCategory" class="p-3 rounded-xl bg-white/80 shadow-inner"><option value="Necesidades">Necesidades</option><option value="Deseos">Deseos</option></select>
             <input type="number" id="serviceDueDay" placeholder="Día de cobro (1-31)" min="1" max="31" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           </div>
           <button id="addServiceBtn" class="w-full py-3 rounded-xl font-bold bg-indigo-600 text-white shadow-md">➕ Agregar servicio</button>
         </div>
       </div>
-      <div class="neumorph-card p-5 rounded-2xl">
-        <h2 class="text-md font-bold mb-3">📋 Mis suscripciones activas</h2>
-        <div id="servicesListContainer" class="space-y-2 max-h-64 overflow-y-auto"></div>
-      </div>
+      <div class="neumorph-card p-5 rounded-2xl"><h2 class="text-md font-bold mb-3">📋 Mis suscripciones activas</h2><div id="servicesListContainer" class="space-y-2 max-h-64 overflow-y-auto"></div></div>
     </div>
   </main>
 
-  <!-- Barra de Navegación Fija -->
+  <!-- Barra de navegación -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 shadow-lg z-10">
     <div class="max-w-md mx-auto flex justify-around items-center py-2 px-4">
-      <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-indigo-600">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        <span class="text-xs">Inicio</span>
-      </button>
-      <button data-tab="income" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <span class="text-xs">Ingresos</span>
-      </button>
-      <button data-tab="expenses" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
-        <span class="text-xs">Gastos</span>
-      </button>
-      <button data-tab="calendar" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        <span class="text-xs">Calendario</span>
-      </button>
+      <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-indigo-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg><span class="text-xs">Inicio</span></button>
+      <button data-tab="income" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="text-xs">Ingresos</span></button>
+      <button data-tab="expenses" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg><span class="text-xs">Gastos</span></button>
+      <button data-tab="calendar" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span class="text-xs">Calendario</span></button>
     </div>
   </nav>
 
   <script src="./app.js"></script>
-  
   <script>
-    // Subcategorías Dinámicas
+    // Subcategorías dinámicas (para el formulario de gastos)
     const categorySelect = document.getElementById('expenseCategory');
     const subcategorySelect = document.getElementById('expenseSubcategory');
-
-    const subcategories = {
+    const subcategoriesMap = {
       'Necesidades': ["🍔 Comida y Súper", "🚗 Gasolina y Carro", "🏥 Salud", "🏠 Servicios"],
       'Deseos': ["🎮 Juegos y Ocio", "🍽️ Salidas", "🛍️ Compras", "🔄 Otros"],
       'Ahorro/Deuda': ["💰 Fondo de Ahorro", "💳 Pago Tarjeta/Prestamo"]
     };
-
-    function updateSubcategories() {
-      const selectedCat = categorySelect.value;
-      const list = subcategories[selectedCat] || [];
-      subcategorySelect.innerHTML = list.map(sub => `<option value="${sub}">${sub}</option>`).join('');
-    }
-
-    categorySelect.addEventListener('change', updateSubcategories);
-    updateSubcategories();
+    function updateSubcats() { const list = subcategoriesMap[categorySelect.value] || []; subcategorySelect.innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join(''); }
+    categorySelect.addEventListener('change', updateSubcats);
+    updateSubcats();
   </script>
 </body>
 </html>

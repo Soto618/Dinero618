@@ -1,4 +1,4 @@
-// app.js - Motor de control monetario real PWA con Saldo Principal
+// app.js - Motor con edición y corrección de errores en quincena
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -28,6 +28,7 @@ let services = [];
 let paidServiceIds = [];
 let mainBalance = 0;
 let budgetChart = null;
+let isEditingSalary = false;
 
 // Elementos del DOM
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
@@ -37,6 +38,7 @@ let needsCommitted, wantsCommitted;
 let needsSpent, wantsSpent;
 let needsFree, wantsFree;
 let expenseListContainer, alertsContainer, servicesListContainer;
+let salaryInput, salaryDateInput, setSalaryBtn, editSalaryBtn;
 
 function calculateAllocations(salary) {
   return { needs: salary * 0.5, wants: salary * 0.3, savings: salary * 0.2 };
@@ -103,13 +105,31 @@ function loadFromLocalStorage() {
 }
 
 // Lógica de Operaciones Financieras
-function resetPeriod(newSalary, newDate) {
-  mainBalance = newSalary; 
-  currentSalary = newSalary;
-  salaryDate = newDate;
-  currentFortnight = getFortnightFromDate(newDate);
-  expenses = [];
-  paidServiceIds = [];
+function handleSalarySubmit(newSalary, newDate) {
+  if (currentSalary > 0 && !isEditingSalary) {
+    if (confirm('¿Quieres iniciar un periodo nuevo? Esto limpiará el historial de gastos de la quincena anterior.')) {
+      mainBalance = newSalary;
+      currentSalary = newSalary;
+      salaryDate = newDate;
+      currentFortnight = getFortnightFromDate(newDate);
+      expenses = [];
+      paidServiceIds = [];
+    } else { return; }
+  } else if (isEditingSalary) {
+    // CORRECCIÓN INTELIGENTE: Calcula la diferencia exacta para no perder los gastos ya hechos
+    const difference = newSalary - currentSalary;
+    mainBalance += difference; 
+    currentSalary = newSalary;
+    salaryDate = newDate;
+    currentFortnight = getFortnightFromDate(newDate);
+    isEditingSalary = false;
+  } else {
+    mainBalance = newSalary;
+    currentSalary = newSalary;
+    salaryDate = newDate;
+    currentFortnight = getFortnightFromDate(newDate);
+  }
+  
   saveToLocalStorage();
   refreshUI();
 }
@@ -147,7 +167,7 @@ function addExpense(description, amount, category, subcategory = "Manual") {
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
   if (target) {
-    mainBalance += target.amount; // Reembolsa de inmediato al saldo general
+    mainBalance += target.amount; 
     expenses = expenses.filter(exp => exp.id !== id);
     saveToLocalStorage();
     refreshUI();
@@ -161,12 +181,10 @@ function refreshUI() {
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
 
-  // Render en pantalla principal
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
   salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha';
   fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
   
-  // Sincronización perfecta del balance en vivo
   mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
 
   needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
@@ -185,6 +203,26 @@ function refreshUI() {
 
   needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
   wantsFree.textContent = `$${freeWants.toFixed(2)}`;
+
+  // Control de botones e inputs según modo edición
+  if (currentSalary > 0 && !isEditingSalary) {
+    salaryInput.value = currentSalary;
+    salaryDateInput.value = salaryDate;
+    salaryInput.disabled = true;
+    salaryDateInput.disabled = true;
+    setSalaryBtn.classList.add('hidden');
+    editSalaryBtn.classList.remove('hidden');
+  } else {
+    if (!isEditingSalary) {
+      salaryInput.value = '';
+      salaryDateInput.value = '';
+    }
+    salaryInput.disabled = false;
+    salaryDateInput.disabled = false;
+    setSalaryBtn.classList.remove('hidden');
+    editSalaryBtn.classList.add('hidden');
+    setSalaryBtn.textContent = isEditingSalary ? '💾 Guardar Corrección' : '✨ Iniciar Quincena';
+  }
 
   renderExpenseList();
   renderServicesList();
@@ -317,20 +355,29 @@ document.addEventListener('DOMContentLoaded', () => {
   expenseListContainer = document.getElementById('expenseListContainer');
   alertsContainer = document.getElementById('alertsContainer');
   servicesListContainer = document.getElementById('servicesListContainer');
+  
+  salaryInput = document.getElementById('salaryInput');
+  salaryDateInput = document.getElementById('salaryDateInput');
+  setSalaryBtn = document.getElementById('setSalaryBtn');
+  editSalaryBtn = document.getElementById('editSalaryBtn');
 
   initChart();
   loadFromLocalStorage();
   initTabs();
   refreshUI();
 
-  document.getElementById('setSalaryBtn').addEventListener('click', () => {
-    const val = parseFloat(document.getElementById('salaryInput').value);
-    const date = document.getElementById('salaryDateInput').value;
+  setSalaryBtn.addEventListener('click', () => {
+    const val = parseFloat(salaryInput.value);
+    const date = salaryDateInput.value;
     if (val > 0 && date) {
-      resetPeriod(val, date);
-      document.getElementById('salaryInput').value = '';
+      handleSalarySubmit(val, date);
       document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    } else { alert('Ingresa un sueldo y una fecha válida para iniciar.'); }
+    } else { alert('Ingresa un sueldo y una fecha válida.'); }
+  });
+
+  editSalaryBtn.addEventListener('click', () => {
+    isEditingSalary = true;
+    refreshUI();
   });
 
   document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {

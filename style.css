@@ -1,0 +1,56 @@
+/* style.css - Neumorphism y transiciones */
+body {
+  background: #eef2f5;
+}
+
+.neumorph-card {
+  background: #eef2f5;
+  box-shadow: 8px 8px 16px #d1d9e0, -8px -8px 16px #ffffff;
+  transition: all 0.2s ease;
+}
+.neumorph-card:active {
+  box-shadow: inset 4px 4px 8px #d1d9e0, inset -4px -4px 8px #ffffff;
+}
+
+/* Scroll suave */
+#expenseListContainer::-webkit-scrollbar,
+#servicesListContainer::-webkit-scrollbar,
+#agendaContainer::-webkit-scrollbar {
+  width: 4px;
+}
+#expenseListContainer::-webkit-scrollbar-track,
+#servicesListContainer::-webkit-scrollbar-track,
+#agendaContainer::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+#expenseListContainer::-webkit-scrollbar-thumb,
+#servicesListContainer::-webkit-scrollbar-thumb,
+#agendaContainer::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+/* Inputs y selects */
+input, select {
+  background: #eef2f5;
+  box-shadow: inset 3px 3px 6px #d1d9e0, inset -3px -3px 6px #ffffff;
+  transition: all 0.15s;
+}
+input:focus, select:focus {
+  outline: none;
+  box-shadow: inset 2px 2px 4px #d1d9e0, inset -2px -2px 4px #ffffff, 0 0 0 2px rgba(99,102,241,0.3);
+}
+
+.tab-btn.active {
+  color: #4f46e5;
+  font-weight: 600;
+  transform: translateY(-2px);
+  transition: all 0.2s;
+}
+
+.alert-card {
+  background: #fef9e3;
+  box-shadow: 6px 6px 12px #d1d9e0, -6px -6px 12px #ffffff;
+  border-left: 5px solid #f59e0b;
+}

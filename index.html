@@ -6,11 +6,11 @@
   <meta name="theme-color" content="#2C3E50">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="./manifest.json">
   <title>Presupuesto 50/30/20 | PWA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body class="bg-[#eef2f5] font-sans antialiased">
 
@@ -18,7 +18,6 @@
     
     <!-- ==================== PESTAÑA 1: DASHBOARD ==================== -->
     <div id="tab-dashboard" class="tab-content space-y-6">
-      <!-- Header con sueldo activo -->
       <div class="neumorph-card p-5 rounded-2xl text-center">
         <h1 class="text-2xl font-bold text-gray-800 tracking-tight">💰 50/30/20</h1>
         <p class="text-xs text-gray-500 mt-1">Presupuesto quincenal · Regla financiera</p>
@@ -30,7 +29,6 @@
         <div class="text-[11px] text-gray-500 mt-1" id="fortnightDisplay"></div>
       </div>
 
-      <!-- Tarjetas de asignación 50/30/20 (montos totales) -->
       <div class="grid grid-cols-3 gap-3">
         <div class="neumorph-card p-3 rounded-xl text-center">
           <p class="text-xs uppercase font-semibold text-indigo-700">Necesidades</p>
@@ -49,10 +47,8 @@
         </div>
       </div>
 
-      <!-- Nuevos indicadores: Dinero Comprometido y Libre Real -->
       <div class="neumorph-card p-4 rounded-2xl space-y-3">
         <h2 class="text-sm font-bold text-gray-700">📌 Estado detallado por categoría</h2>
-        <!-- Necesidades -->
         <div class="bg-white/40 rounded-xl p-3">
           <div class="flex justify-between text-sm">
             <span class="font-semibold text-indigo-700">🏠 Necesidades</span>
@@ -68,10 +64,9 @@
           </div>
           <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1">
             <span>🟢 Libre real para gastar:</span>
-            <span class="text-emerald-700" id="needsFree">$0</span>
+            <span id="needsFree" class="text-emerald-700 font-bold"></span>
           </div>
         </div>
-        <!-- Deseos -->
         <div class="bg-white/40 rounded-xl p-3">
           <div class="flex justify-between text-sm">
             <span class="font-semibold text-amber-700">🎮 Deseos</span>
@@ -87,30 +82,31 @@
           </div>
           <div class="flex justify-between text-sm font-bold mt-1 border-t pt-1">
             <span>🟢 Libre real para gastar:</span>
-            <span class="text-emerald-700" id="wantsFree">$0</span>
+            <span id="wantsFree" class="text-emerald-700 font-bold"></span>
           </div>
         </div>
       </div>
 
-      <!-- Gráfica -->
       <div class="neumorph-card p-4 rounded-2xl">
         <h2 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">📊 Estado vs Presupuesto</h2>
         <canvas id="budgetChart" width="400" height="200" class="w-full h-auto max-h-52"></canvas>
       </div>
 
-      <!-- Alertas de vencimientos (Dashboard) -->
       <div id="alertsContainer" class="space-y-2"></div>
     </div>
 
-    <!-- ==================== PESTAÑA 2: INGRESOS / CONFIGURACIÓN ==================== -->
+    <!-- ==================== PESTAÑA 2: INGRESOS ==================== -->
     <div id="tab-income" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800 flex items-center gap-2">📅 Nuevo período quincenal</h2>
         <div class="mt-3 space-y-3">
-          <input type="number" id="salaryInput" placeholder="Sueldo quincenal (ej: 25000)" class="w-full p-3 rounded-xl border-0 bg-white/80 shadow-inner focus:ring-2 focus:ring-indigo-300 outline-none">
-          <input type="date" id="salaryDateInput" class="w-full p-3 rounded-xl border-0 bg-white/80 shadow-inner focus:ring-2 focus:ring-indigo-300 outline-none">
-          <button id="setSalaryBtn" class="w-full py-3 rounded-xl font-bold text-white transition-all bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-md hover:shadow-lg active:scale-95">✨ Establecer sueldo + Reiniciar período</button>
-          <p class="text-xs text-gray-500 text-center">⚠️ Al cambiar la fecha se reinician los pagos marcados como hechos y se recalcula el compromiso.</p>
+          <input type="text" id="salaryInput" placeholder="Sueldo quincenal (ej: 25000)" inputmode="numeric" class="w-full p-3 rounded-xl bg-white/80 shadow-inner focus:ring-2 focus:ring-indigo-300 outline-none">
+          <input type="date" id="salaryDateInput" class="w-full p-3 rounded-xl bg-white/80 shadow-inner focus:ring-2 focus:ring-indigo-300 outline-none">
+          <div class="grid grid-cols-2 gap-3">
+            <button id="setSalaryBtn" class="py-3 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-md active:scale-95">✨ Reiniciar período (borra gastos)</button>
+            <button id="updateSalaryOnlyBtn" class="py-3 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-700 shadow-md active:scale-95">✏️ Modificar solo sueldo</button>
+          </div>
+          <p class="text-xs text-gray-500 text-center">⚠️ "Reiniciar" borra todos los gastos y pagos marcados. "Modificar" solo cambia sueldo y fecha.</p>
         </div>
       </div>
     </div>
@@ -118,7 +114,7 @@
     <!-- ==================== PESTAÑA 3: GASTOS ==================== -->
     <div id="tab-expenses" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
-        <h2 class="text-md font-bold text-gray-800 flex items-center gap-2">➕ Registrar gasto manual</h2>
+        <h2 class="text-md font-bold text-gray-800">➕ Registrar gasto manual</h2>
         <div class="mt-3 space-y-3">
           <input type="text" id="expenseDesc" placeholder="Concepto" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <input type="number" id="expenseAmount" placeholder="Monto" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
@@ -135,7 +131,7 @@
               <option value="Otros">🔄 Otros</option>
             </select>
           </div>
-          <button id="addExpenseBtn" class="w-full py-3 rounded-xl font-bold bg-emerald-600 text-white shadow-md hover:bg-emerald-700 transition">➕ Agregar gasto</button>
+          <button id="addExpenseBtn" class="w-full py-3 rounded-xl font-bold bg-emerald-600 text-white shadow-md active:scale-95">➕ Agregar gasto</button>
         </div>
       </div>
       <div class="neumorph-card p-5 rounded-2xl">
@@ -149,24 +145,21 @@
 
     <!-- ==================== PESTAÑA 4: CALENDARIO Y SERVICIOS ==================== -->
     <div id="tab-calendar" class="tab-content hidden space-y-6">
-      <!-- Formulario para agregar servicio recurrente -->
       <div class="neumorph-card p-5 rounded-2xl">
-        <h2 class="text-md font-bold text-gray-800 flex items-center gap-2">📌 Agregar servicio recurrente</h2>
+        <h2 class="text-md font-bold text-gray-800">📌 Agregar servicio recurrente</h2>
         <div class="mt-3 space-y-3">
-          <input type="text" id="serviceName" placeholder="Nombre (ej: Netflix)" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
+          <input type="text" id="serviceName" placeholder="Nombre" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <input type="number" id="serviceAmount" placeholder="Monto" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           <div class="grid grid-cols-2 gap-3">
             <select id="serviceCategory" class="p-3 rounded-xl bg-white/80 shadow-inner">
               <option value="Necesidades">Necesidades</option>
               <option value="Deseos">Deseos</option>
             </select>
-            <input type="number" id="serviceDueDay" placeholder="Día del mes (1-31)" min="1" max="31" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
+            <input type="number" id="serviceDueDay" placeholder="Día (1-31)" min="1" max="31" class="w-full p-3 rounded-xl bg-white/80 shadow-inner">
           </div>
-          <button id="addServiceBtn" class="w-full py-3 rounded-xl font-bold bg-indigo-600 text-white shadow-md hover:bg-indigo-700 transition">➕ Agregar servicio</button>
+          <button id="addServiceBtn" class="w-full py-3 rounded-xl font-bold bg-indigo-600 text-white shadow-md active:scale-95">➕ Agregar servicio</button>
         </div>
       </div>
-
-      <!-- Lista de servicios con CRUD -->
       <div class="neumorph-card p-5 rounded-2xl">
         <div class="flex justify-between items-center mb-3">
           <h2 class="text-md font-bold text-gray-800">📋 Mis servicios recurrentes</h2>
@@ -174,8 +167,6 @@
         </div>
         <div id="servicesListContainer" class="space-y-2 max-h-64 overflow-y-auto"></div>
       </div>
-
-      <!-- Agenda: próximos pagos -->
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800 mb-3">📅 Agenda de pagos (próximos)</h2>
         <div id="agendaContainer" class="space-y-2"></div>
@@ -183,7 +174,6 @@
     </div>
   </main>
 
-  <!-- Barra de navegación inferior con 4 botones -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200/50 shadow-lg z-10">
     <div class="max-w-md mx-auto flex justify-around items-center py-2 px-4">
       <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-gray-500 transition-all active:scale-95">
@@ -205,11 +195,13 @@
     </div>
   </nav>
 
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(err => console.log('SW error:', err));
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(reg => console.log('SW registrado:', reg))
+          .catch(err => console.log('Error SW:', err));
       });
     }
   </script>

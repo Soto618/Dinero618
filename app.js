@@ -1,4 +1,4 @@
-// app.js - Motor con edición y corrección de errores en quincena
+// app.js - Motor Inteligente con Procesamiento de Texto Libre y Coach IA Integrado
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -39,6 +39,7 @@ let needsSpent, wantsSpent;
 let needsFree, wantsFree;
 let expenseListContainer, alertsContainer, servicesListContainer;
 let salaryInput, salaryDateInput, setSalaryBtn, editSalaryBtn;
+let aiInput, aiProcessBtn, aiFeedback, coachText, refreshCoachBtn;
 
 function calculateAllocations(salary) {
   return { needs: salary * 0.5, wants: salary * 0.3, savings: salary * 0.2 };
@@ -79,7 +80,6 @@ function getTodaysDueServices() {
   return services.filter(s => s.dueDay === today && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id));
 }
 
-// Persistencia
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY, currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE, salaryDate);
@@ -104,7 +104,98 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// Lógica de Operaciones Financieras
+// ========== PROCESAMIENTO DE TEXTO IA (LOCAL) ==========
+function processAIText(text) {
+  const rawText = text.toLowerCase().trim();
+  if (!rawText) return;
+  const numberPattern = /\d+(?:[\.,]\d+)?/g;
+  const matches = rawText.match(numberPattern);
+  if (!matches) {
+    showAIFeedback("⚠️ No logré identificar ningún monto numérico.", "text-red-600");
+    return;
+  }
+  const amount = parseFloat(matches[0].replace(',', '.'));
+  if (isNaN(amount) || amount <= 0) {
+    showAIFeedback("⚠️ El monto detectado no es válido.", "text-red-600");
+    return;
+  }
+  let isIncome = false;
+  const incomeKeywords = ["gané", "ganancia", "ingreso", "recibí", "sumar", "suma", "pago extra", "deposito", "sueldo extra"];
+  if (incomeKeywords.some(kw => rawText.includes(kw))) isIncome = true;
+
+  let category = "Deseos";
+  let subcategory = "🔄 Otros";
+  let cleanDesc = text.replace(matches[0], "").replace(/gasté|gaste|gané|gane|en|un|una|unos|unas/gi, "").trim();
+  if (!cleanDesc) cleanDesc = isIncome ? "Ingreso Extra" : "Gasto Inteligente";
+
+  const keywordsMap = [
+    { keywords: ["super", "comida", "despensa", "walmart", "restaurante", "cenar", "comer", "almuerzo", "tacos", "pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
+    { keywords: ["gas", "gasolina", "carro", "auto", "jetta", "tuning", "filtro", "mantenimiento", "taller", "mecanico", "aceite", "reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
+    { keywords: ["medicina", "doctor", "clinica", "farmacia", "salud", "consulta", "dentista"], cat: "Necesidades", sub: "🏥 Salud" },
+    { keywords: ["luz", "agua", "gas natural", "internet", "wifi", "renta", "alquiler", "servicio"], cat: "Necesidades", sub: "🏠 Servicios" },
+    { keywords: ["juego", "steam", "gamepass", "ps plus", "xbox", "playstation", "ocio", "cine", "pelicula", "entretenimiento"], cat: "Deseos", sub: "🎮 Juegos y Ocio" },
+    { keywords: ["cheve", "antro", "bar", "salida", "pisto", "fiesta", "cafecito", "starbucks"], cat: "Deseos", sub: "🍽️ Salidas" },
+    { keywords: ["ropa", "tenis", "amazon", "aliexpress", "compra", "shoppear", "reloj", "regalo"], cat: "Deseos", sub: "🛍️ Compras" },
+    { keywords: ["ahorro", "guardar", "inversion", "crypto", "bitcoin", "fondo"], cat: "Ahorro/Deuda", sub: "💰 Fondo de Ahorro" },
+    { keywords: ["tarjeta", "credito", "prestamo", "deuda", "abono", "banco"], cat: "Ahorro/Deuda", sub: "💳 Pago Tarjeta/Prestamo" }
+  ];
+  for (const item of keywordsMap) {
+    if (item.keywords.some(kw => rawText.includes(kw))) {
+      category = item.cat;
+      subcategory = item.sub;
+      break;
+    }
+  }
+  if (isIncome) {
+    if (addExtraIncome(cleanDesc, amount)) {
+      showAIFeedback(`✨ IA detectó GANANCIA: +$${amount.toFixed(2)} sumado a tu Saldo Real.`, "text-emerald-600");
+    }
+  } else {
+    if (addExpense(cleanDesc, amount, category, subcategory)) {
+      showAIFeedback(`✅ IA registró GASTO: $${amount.toFixed(2)} en ${category} → ${subcategory}.`, "text-indigo-600");
+    }
+  }
+  aiInput.value = "";
+}
+
+function showAIFeedback(msg, colorClass) {
+  aiFeedback.textContent = msg;
+  aiFeedback.className = `text-[11px] mt-1.5 px-1 font-semibold ${colorClass}`;
+  aiFeedback.classList.remove('hidden');
+}
+
+function updateAICoachAnalysis() {
+  if (!currentSalary || currentSalary <= 0) {
+    coachText.innerHTML = "🧠 **Coach IA:** Aún no has configurado tu sueldo quincenal base. Ingresa tus datos en la pestaña de 'Ingresos' para activar mi análisis.";
+    return;
+  }
+  const alloc = calculateAllocations(currentSalary);
+  const { spentNeeds, spentWants } = getSpentByCategory();
+  const committedNeeds = calculateCommittedByCategory('Necesidades');
+  const committedWants = calculateCommittedByCategory('Deseos');
+  const freeNeeds = alloc.needs - spentNeeds - committedNeeds;
+  const freeWants = alloc.wants - spentWants - committedWants;
+  let advice = "🧠 **Coach IA:** ";
+  if (mainBalance <= 0) {
+    advice += "¡Alerta roja! Tu saldo real disponible está en ceros. Evita cualquier gasto en Deseos hasta la próxima quincena.";
+  } else if (freeNeeds < 0) {
+    advice += "Ojo, has sobrepasado tu presupuesto de Necesidades. Vas a tener que jalar fondos prestados de la bolsa de Deseos para equilibrarlo.";
+  } else if (freeWants < 0) {
+    advice += "Te has pasado de la raya en el presupuesto de Deseos (ocio/salidas). Pon candado a las compras espontáneas inmediatamente.";
+  } else {
+    const percentageWantsSpent = (spentWants / alloc.wants) * 100;
+    if (percentageWantsSpent > 75) {
+      advice += `Llevas consumido el ${percentageWantsSpent.toFixed(0)}% de tus Deseos libres. Te sugiero limitar el ocio, pero vas bien.`;
+    } else if (spentNeeds > spentWants) {
+      advice += "Excelente orden financiero. Estás priorizando la comida, el carro y tus cuentas fijas. ¡Mantén ese ritmo!";
+    } else {
+      advice += `Tus finanzas quincenales están estables. Tienes cupo sano en Necesidades ($${freeNeeds.toFixed(0)}) y Deseos ($${freeWants.toFixed(0)}). Recuerda guardar un colchón.`;
+    }
+  }
+  coachText.innerHTML = advice;
+}
+
+// ========== OPERACIONES FINANCIERAS ==========
 function handleSalarySubmit(newSalary, newDate) {
   if (currentSalary > 0 && !isEditingSalary) {
     if (confirm('¿Quieres iniciar un periodo nuevo? Esto limpiará el historial de gastos de la quincena anterior.')) {
@@ -116,9 +207,8 @@ function handleSalarySubmit(newSalary, newDate) {
       paidServiceIds = [];
     } else { return; }
   } else if (isEditingSalary) {
-    // CORRECCIÓN INTELIGENTE: Calcula la diferencia exacta para no perder los gastos ya hechos
     const difference = newSalary - currentSalary;
-    mainBalance += difference; 
+    mainBalance += difference;
     currentSalary = newSalary;
     salaryDate = newDate;
     currentFortnight = getFortnightFromDate(newDate);
@@ -129,7 +219,6 @@ function handleSalarySubmit(newSalary, newDate) {
     salaryDate = newDate;
     currentFortnight = getFortnightFromDate(newDate);
   }
-  
   saveToLocalStorage();
   refreshUI();
 }
@@ -140,7 +229,7 @@ function addExtraIncome(description, amount) {
     return false;
   }
   const text = description.trim() || "Ingreso Extra";
-  mainBalance += amount; 
+  mainBalance += amount;
   expenses.push({ id: Date.now(), description: `✨ GANANCIA: ${text}`, amount: -amount, category: 'Ingreso', subcategory: 'Extra' });
   saveToLocalStorage();
   refreshUI();
@@ -156,8 +245,8 @@ function addExpense(description, amount, category, subcategory = "Manual") {
     alert(`⚠️ Fondos insuficientes en tu Saldo Disponible. Saldo actual: $${mainBalance.toFixed(2)}`);
     return false;
   }
-
-  mainBalance -= amount; 
+  // AQUÍ ES DONDE SE RESTA DEL SALDO PRINCIPAL
+  mainBalance -= amount;
   expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory });
   saveToLocalStorage();
   refreshUI();
@@ -167,7 +256,7 @@ function addExpense(description, amount, category, subcategory = "Manual") {
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
   if (target) {
-    mainBalance += target.amount; 
+    mainBalance += target.amount;
     expenses = expenses.filter(exp => exp.id !== id);
     saveToLocalStorage();
     refreshUI();
@@ -184,7 +273,6 @@ function refreshUI() {
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
   salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha';
   fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
-  
   mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
 
   needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
@@ -200,11 +288,10 @@ function refreshUI() {
 
   const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
   const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
-
   needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
   wantsFree.textContent = `$${freeWants.toFixed(2)}`;
 
-  // Control de botones e inputs según modo edición
+  // Control de estado de edición de sueldo
   if (currentSalary > 0 && !isEditingSalary) {
     salaryInput.value = currentSalary;
     salaryDateInput.value = salaryDate;
@@ -213,10 +300,6 @@ function refreshUI() {
     setSalaryBtn.classList.add('hidden');
     editSalaryBtn.classList.remove('hidden');
   } else {
-    if (!isEditingSalary) {
-      salaryInput.value = '';
-      salaryDateInput.value = '';
-    }
     salaryInput.disabled = false;
     salaryDateInput.disabled = false;
     setSalaryBtn.classList.remove('hidden');
@@ -227,6 +310,7 @@ function refreshUI() {
   renderExpenseList();
   renderServicesList();
   renderAlerts();
+  updateAICoachAnalysis();
 
   if (budgetChart && currentSalary) {
     budgetChart.data.datasets[0].data = [Math.max(0, spentNeeds), Math.max(0, spentWants), Math.max(0, spentSavings)];
@@ -243,79 +327,51 @@ function renderExpenseList() {
   }
   expenseListContainer.innerHTML = expenses.map(exp => `
     <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm text-sm">
-      <div>
-        <div class="font-medium text-gray-800">${escapeHtml(exp.description)}</div>
-        <div class="text-[11px] text-gray-400">${exp.category} • ${exp.subcategory}</div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">
-          ${exp.amount < 0 ? `+$${Math.abs(exp.amount).toFixed(2)}` : `$${exp.amount.toFixed(2)}`}
-        </span>
-        <button class="delete-expense text-red-400 p-1" data-id="${exp.id}">🗑️</button>
-      </div>
+      <div><div class="font-medium text-gray-800">${escapeHtml(exp.description)}</div><div class="text-[11px] text-gray-400">${exp.category} • ${exp.subcategory}</div></div>
+      <div class="flex items-center gap-2"><span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">${exp.amount < 0 ? `+$${Math.abs(exp.amount).toFixed(2)}` : `$${exp.amount.toFixed(2)}`}</span><button class="delete-expense text-red-400 p-1" data-id="${exp.id}">🗑️</button></div>
     </div>
   `).join('');
-
-  document.querySelectorAll('.delete-expense').forEach(btn => {
-    btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id)));
-  });
+  document.querySelectorAll('.delete-expense').forEach(btn => btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id))));
 }
 
 function renderServicesList() {
   if (!servicesListContainer) return;
   servicesListContainer.innerHTML = services.map(s => `
     <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs">
-      <div>
-        <div class="font-bold text-gray-700">${escapeHtml(s.name)}</div>
-        <div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div>
-      </div>
+      <div><div class="font-bold text-gray-700">${escapeHtml(s.name)}</div><div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div></div>
       <button class="delete-service text-red-400" data-id="${s.id}">🗑️</button>
     </div>
   `).join('');
-  document.querySelectorAll('.delete-service').forEach(btn => {
-    btn.addEventListener('click', () => {
-      services = services.filter(item => item.id !== parseInt(btn.dataset.id));
-      saveToLocalStorage();
-      refreshUI();
-    });
-  });
+  document.querySelectorAll('.delete-service').forEach(btn => btn.addEventListener('click', () => {
+    services = services.filter(item => item.id !== parseInt(btn.dataset.id));
+    saveToLocalStorage();
+    refreshUI();
+  }));
 }
 
 function renderAlerts() {
   if (!alertsContainer) return;
   const todayDue = getTodaysDueServices();
-  if (todayDue.length === 0) {
-    alertsContainer.innerHTML = '';
-    return;
-  }
+  if (todayDue.length === 0) { alertsContainer.innerHTML = ''; return; }
   alertsContainer.innerHTML = todayDue.map(s => `
     <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs">
       <div><span class="font-bold text-amber-800">⚠️ Vence hoy:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div>
       <button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar</button>
     </div>
   `).join('');
-  document.querySelectorAll('.pay-service-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = parseInt(btn.dataset.id);
-      if (!paidServiceIds.includes(id)) {
-        paidServiceIds.push(id);
-        addExpense(`${btn.dataset.name} (Cobro Fijo)`, parseFloat(btn.dataset.amount), btn.dataset.category, "Automático");
-      }
-    });
-  });
+  document.querySelectorAll('.pay-service-btn').forEach(btn => btn.addEventListener('click', () => {
+    const id = parseInt(btn.dataset.id);
+    if (!paidServiceIds.includes(id)) {
+      paidServiceIds.push(id);
+      addExpense(`${btn.dataset.name} (Cobro Fijo)`, parseFloat(btn.dataset.amount), btn.dataset.category, "Automático");
+    }
+  }));
 }
 
 function initChart() {
   const ctx = document.getElementById('budgetChart').getContext('2d');
   budgetChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: ['Necesidades', 'Deseos', 'Ahorro'],
-      datasets: [
-        { label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 },
-        { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }
-      ]
-    },
+    type: 'bar', data: { labels: ['Necesidades', 'Deseos', 'Ahorro'], datasets: [{ label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 }, { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }] },
     options: { responsive: true, scales: { y: { beginAtZero: true } } }
   });
 }
@@ -327,12 +383,8 @@ function initTabs() {
     const target = btn.dataset.tab;
     contents.forEach(c => c.classList.add('hidden'));
     document.getElementById(`tab-${target}`).classList.remove('hidden');
-    tabs.forEach(t => {
-      t.classList.remove('text-indigo-600');
-      t.classList.add('text-gray-500');
-    });
-    btn.classList.add('text-indigo-600');
-    btn.classList.remove('text-gray-500');
+    tabs.forEach(t => { t.classList.remove('text-indigo-600'); t.classList.add('text-gray-500'); });
+    btn.classList.add('text-indigo-600'); btn.classList.remove('text-gray-500');
   }));
 }
 
@@ -341,84 +393,34 @@ document.addEventListener('DOMContentLoaded', () => {
   salaryDateDisplay = document.getElementById('salaryDateDisplay');
   fortnightDisplay = document.getElementById('fortnightDisplay');
   mainBalanceDisplay = document.getElementById('mainBalanceDisplay');
-  needsAlloc = document.getElementById('needsAlloc');
-  wantsAlloc = document.getElementById('wantsAlloc');
-  savingsAlloc = document.getElementById('savingsAlloc');
-  needsAllocDetail = document.getElementById('needsAllocDetail');
-  wantsAllocDetail = document.getElementById('wantsAllocDetail');
-  needsCommitted = document.getElementById('needsCommitted');
-  wantsCommitted = document.getElementById('wantsCommitted');
-  needsSpent = document.getElementById('needsSpent');
-  wantsSpent = document.getElementById('wantsSpent');
-  needsFree = document.getElementById('needsFree');
-  wantsFree = document.getElementById('wantsFree');
+  needsAlloc = document.getElementById('needsAlloc'); wantsAlloc = document.getElementById('wantsAlloc'); savingsAlloc = document.getElementById('savingsAlloc');
+  needsAllocDetail = document.getElementById('needsAllocDetail'); wantsAllocDetail = document.getElementById('wantsAllocDetail');
+  needsCommitted = document.getElementById('needsCommitted'); wantsCommitted = document.getElementById('wantsCommitted');
+  needsSpent = document.getElementById('needsSpent'); wantsSpent = document.getElementById('wantsSpent');
+  needsFree = document.getElementById('needsFree'); wantsFree = document.getElementById('wantsFree');
   expenseListContainer = document.getElementById('expenseListContainer');
   alertsContainer = document.getElementById('alertsContainer');
   servicesListContainer = document.getElementById('servicesListContainer');
-  
-  salaryInput = document.getElementById('salaryInput');
-  salaryDateInput = document.getElementById('salaryDateInput');
-  setSalaryBtn = document.getElementById('setSalaryBtn');
-  editSalaryBtn = document.getElementById('editSalaryBtn');
+  salaryInput = document.getElementById('salaryInput'); salaryDateInput = document.getElementById('salaryDateInput');
+  setSalaryBtn = document.getElementById('setSalaryBtn'); editSalaryBtn = document.getElementById('editSalaryBtn');
+  aiInput = document.getElementById('aiInput'); aiProcessBtn = document.getElementById('aiProcessBtn');
+  aiFeedback = document.getElementById('aiFeedback'); coachText = document.getElementById('coachText');
+  refreshCoachBtn = document.getElementById('refreshCoachBtn');
 
   initChart();
   loadFromLocalStorage();
   initTabs();
   refreshUI();
 
-  setSalaryBtn.addEventListener('click', () => {
-    const val = parseFloat(salaryInput.value);
-    const date = salaryDateInput.value;
-    if (val > 0 && date) {
-      handleSalarySubmit(val, date);
-      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    } else { alert('Ingresa un sueldo y una fecha válida.'); }
-  });
-
-  editSalaryBtn.addEventListener('click', () => {
-    isEditingSalary = true;
-    refreshUI();
-  });
-
-  document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
-    const desc = document.getElementById('extraIncomeDesc').value;
-    const amt = parseFloat(document.getElementById('extraIncomeAmount').value);
-    if (addExtraIncome(desc, amt)) {
-      document.getElementById('extraIncomeDesc').value = '';
-      document.getElementById('extraIncomeAmount').value = '';
-      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    }
-  });
-
-  document.getElementById('addExpenseBtn').addEventListener('click', () => {
-    const desc = document.getElementById('expenseDesc').value;
-    const amt = parseFloat(document.getElementById('expenseAmount').value);
-    const cat = document.getElementById('expenseCategory').value;
-    const sub = document.getElementById('expenseSubcategory').value;
-    if (addExpense(desc, amt, cat, sub)) {
-      document.getElementById('expenseDesc').value = '';
-      document.getElementById('expenseAmount').value = '';
-      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    }
-  });
-
-  document.getElementById('clearExpensesBtn').addEventListener('click', () => {
-    if (confirm('¿Quieres reiniciar el historial quincenal por completo?')) {
-      expenses = [];
-      mainBalance = currentSalary;
-      paidServiceIds = [];
-      saveToLocalStorage();
-      refreshUI();
-    }
-  });
-  
-  document.getElementById('resetBalanceBtn').addEventListener('click', () => {
-    if (confirm('¿Poner el dinero real disponible a cero?')) {
-      mainBalance = 0;
-      saveToLocalStorage();
-      refreshUI();
-    }
-  });
+  aiProcessBtn.addEventListener('click', () => processAIText(aiInput.value));
+  aiInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processAIText(aiInput.value); });
+  refreshCoachBtn.addEventListener('click', () => { updateAICoachAnalysis(); alert("🤖 El Coach IA ha vuelto a examinar tu balance."); });
+  setSalaryBtn.addEventListener('click', () => { const val = parseFloat(salaryInput.value), date = salaryDateInput.value; if (val > 0 && date) { handleSalarySubmit(val, date); document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } else { alert('Ingresa un sueldo y una fecha válida.'); } });
+  editSalaryBtn.addEventListener('click', () => { isEditingSalary = true; refreshUI(); });
+  document.getElementById('addExtraIncomeBtn').addEventListener('click', () => { const desc = document.getElementById('extraIncomeDesc').value, amt = parseFloat(document.getElementById('extraIncomeAmount').value); if (addExtraIncome(desc, amt)) { document.getElementById('extraIncomeDesc').value = ''; document.getElementById('extraIncomeAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
+  document.getElementById('addExpenseBtn').addEventListener('click', () => { const desc = document.getElementById('expenseDesc').value, amt = parseFloat(document.getElementById('expenseAmount').value), cat = document.getElementById('expenseCategory').value, sub = document.getElementById('expenseSubcategory').value; if (addExpense(desc, amt, cat, sub)) { document.getElementById('expenseDesc').value = ''; document.getElementById('expenseAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
+  document.getElementById('clearExpensesBtn').addEventListener('click', () => { if (confirm('¿Quieres reiniciar el historial quincenal por completo?')) { expenses = []; mainBalance = currentSalary; paidServiceIds = []; saveToLocalStorage(); refreshUI(); } });
+  document.getElementById('resetBalanceBtn').addEventListener('click', () => { if (confirm('¿Poner el dinero real disponible a cero?')) { mainBalance = 0; saveToLocalStorage(); refreshUI(); } });
 });
 
 function escapeHtml(str) {

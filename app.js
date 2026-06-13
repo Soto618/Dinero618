@@ -1,4 +1,4 @@
-// app_3.js - Motor de control monetario real PWA
+// app.js - Motor de control monetario real PWA con Saldo Principal
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -29,7 +29,7 @@ let paidServiceIds = [];
 let mainBalance = 0;
 let budgetChart = null;
 
-// Enlaces de pantalla
+// Elementos del DOM
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
 let needsAllocDetail, wantsAllocDetail;
@@ -77,7 +77,7 @@ function getTodaysDueServices() {
   return services.filter(s => s.dueDay === today && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id));
 }
 
-// Almacenamiento
+// Persistencia
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY, currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE, salaryDate);
@@ -102,7 +102,7 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// Operaciones Lógicas principales
+// Lógica de Operaciones Financieras
 function resetPeriod(newSalary, newDate) {
   mainBalance = newSalary; 
   currentSalary = newSalary;
@@ -116,7 +116,7 @@ function resetPeriod(newSalary, newDate) {
 
 function addExtraIncome(description, amount) {
   if (isNaN(amount) || amount <= 0) {
-    alert('Suma un monto real.');
+    alert('Ingresa un monto válido para el ingreso extra.');
     return false;
   }
   const text = description.trim() || "Ingreso Extra";
@@ -129,11 +129,11 @@ function addExtraIncome(description, amount) {
 
 function addExpense(description, amount, category, subcategory = "Manual") {
   if (isNaN(amount) || amount <= 0) {
-    alert('Ingresa un monto válido.');
+    alert('Por favor introduce un monto numérico válido.');
     return false;
   }
   if (amount > mainBalance) {
-    alert(`⚠️ Dinero insuficiente en el saldo disponible. Tienes: $${mainBalance.toFixed(2)}`);
+    alert(`⚠️ Fondos insuficientes en tu Saldo Disponible. Saldo actual: $${mainBalance.toFixed(2)}`);
     return false;
   }
 
@@ -147,7 +147,7 @@ function addExpense(description, amount, category, subcategory = "Manual") {
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
   if (target) {
-    mainBalance += target.amount; 
+    mainBalance += target.amount; // Reembolsa de inmediato al saldo general
     expenses = expenses.filter(exp => exp.id !== id);
     saveToLocalStorage();
     refreshUI();
@@ -161,12 +161,12 @@ function refreshUI() {
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
 
-  // Escritura en pantalla
+  // Render en pantalla principal
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
   salaryDateDisplay.textContent = salaryDate ? `Fecha de depósito: ${salaryDate}` : 'Sin fecha';
   fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
   
-  // ¡ESTA ES LA CAJA QUE AHORA SE MUEVE EN VIVO!
+  // Sincronización perfecta del balance en vivo
   mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
 
   needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
@@ -200,7 +200,7 @@ function refreshUI() {
 function renderExpenseList() {
   if (!expenseListContainer) return;
   if (expenses.length === 0) {
-    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos anotados.</div>';
+    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 Historial vacío en esta quincena.</div>';
     return;
   }
   expenseListContainer.innerHTML = expenses.map(exp => `
@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
       resetPeriod(val, date);
       document.getElementById('salaryInput').value = '';
       document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    } else { alert('Ingresa un sueldo y una fecha válida.'); }
+    } else { alert('Ingresa un sueldo y una fecha válida para iniciar.'); }
   });
 
   document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
@@ -356,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('clearExpensesBtn').addEventListener('click', () => {
-    if (confirm('¿Quieres limpiar el historial quincenal?')) {
+    if (confirm('¿Quieres reiniciar el historial quincenal por completo?')) {
       expenses = [];
       mainBalance = currentSalary;
       paidServiceIds = [];
@@ -366,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   document.getElementById('resetBalanceBtn').addEventListener('click', () => {
-    if (confirm('¿Poner el dinero real a cero?')) {
+    if (confirm('¿Poner el dinero real disponible a cero?')) {
       mainBalance = 0;
       saveToLocalStorage();
       refreshUI();

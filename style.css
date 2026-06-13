@@ -1,7 +1,6 @@
 body {
   background: #eef2f5;
 }
-
 .neumorph-card {
   background: #eef2f5;
   box-shadow: 8px 8px 16px #d1d9e0, -8px -8px 16px #ffffff;
@@ -10,7 +9,6 @@ body {
 .neumorph-card:active {
   box-shadow: inset 4px 4px 8px #d1d9e0, inset -4px -4px 8px #ffffff;
 }
-
 #expenseListContainer::-webkit-scrollbar,
 #servicesListContainer::-webkit-scrollbar,
 #agendaContainer::-webkit-scrollbar {
@@ -28,7 +26,6 @@ body {
   background: #cbd5e1;
   border-radius: 10px;
 }
-
 input, select {
   background: #eef2f5;
   box-shadow: inset 3px 3px 6px #d1d9e0, inset -3px -3px 6px #ffffff;
@@ -38,14 +35,12 @@ input:focus, select:focus {
   outline: none;
   box-shadow: inset 2px 2px 4px #d1d9e0, inset -2px -2px 4px #ffffff, 0 0 0 2px rgba(99,102,241,0.3);
 }
-
 .tab-btn.active {
   color: #4f46e5;
   font-weight: 600;
   transform: translateY(-2px);
   transition: all 0.2s;
 }
-
 .alert-card {
   background: #fef9e3;
   box-shadow: 6px 6px 12px #d1d9e0, -6px -6px 12px #ffffff;

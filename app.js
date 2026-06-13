@@ -1,4 +1,4 @@
-// app.js - Motor con IA mejorada, fechas y exportación - Pestañas funcionando
+// app.js - Motor con IA mejorada, fechas, exportación y DESGLOSE VISUAL RESTAURADO
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -75,6 +75,15 @@ function calculateCommittedByCategory(category) {
     .reduce((sum, s) => sum + s.amount, 0);
 }
 
+// NUEVA: Obtener lista de servicios comprometidos (con detalles)
+function getCommittedServicesList(category) {
+  if (!currentFortnight) return [];
+  const range = getDueDayRange(currentFortnight);
+  return services
+    .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
+    .sort((a,b) => a.dueDay - b.dueDay);
+}
+
 function getTodaysDueServices() {
   const today = new Date().getDate();
   if (!currentFortnight) return [];
@@ -107,12 +116,11 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// ========== IA MEJORADA: PROCESAMIENTO DE TEXTO CON FECHAS ==========
+// ========== IA MEJORADA ==========
 function parseDateFromText(text) {
   const lower = text.toLowerCase();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
   if (lower.includes('hoy')) return today;
   if (lower.includes('ayer')) {
     const ayer = new Date(today);
@@ -144,10 +152,8 @@ function parseDateFromText(text) {
 function processAIText(text) {
   const rawText = text.toLowerCase().trim();
   if (!rawText) return;
-  
   let expenseDate = parseDateFromText(rawText);
   if (!expenseDate) expenseDate = new Date();
-  
   const numberPattern = /\d+(?:[\.,]\d+)?/g;
   const matches = rawText.match(numberPattern);
   if (!matches) {
@@ -159,16 +165,13 @@ function processAIText(text) {
     showAIFeedback("⚠️ El monto no es válido.", "text-red-600");
     return;
   }
-  
   let isIncome = false;
   const incomeKeywords = ["gané", "ganancia", "ingreso", "recibí", "sumar", "extra", "depósito", "sueldo extra"];
   if (incomeKeywords.some(kw => rawText.includes(kw))) isIncome = true;
-  
   let category = "Deseos";
   let subcategory = "🔄 Otros";
   let cleanDesc = text.replace(matches[0], "").replace(/gasté|gaste|gané|gane|en|un|una|unos|unas|hoy|ayer|mañana|el \d+ de \w+/gi, "").trim();
   if (!cleanDesc) cleanDesc = isIncome ? "Ingreso Extra" : "Gasto Inteligente";
-  
   const keywordsMap = [
     { keywords: ["super", "comida", "despensa", "walmart", "restaurante", "cenar", "comer", "almuerzo", "tacos", "pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
     { keywords: ["gas", "gasolina", "carro", "auto", "jetta", "tuning", "filtro", "mantenimiento", "taller", "mecanico", "aceite", "reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
@@ -187,7 +190,6 @@ function processAIText(text) {
       break;
     }
   }
-  
   if (isIncome) {
     if (addExtraIncomeWithDate(cleanDesc, amount, expenseDate)) {
       showAIFeedback(`✨ Ingreso extra: +$${amount.toFixed(2)} (${expenseDate.toLocaleDateString()})`, "text-emerald-600");
@@ -287,7 +289,7 @@ function handleSalarySubmit(newSalary, newDate) {
   refreshUI();
 }
 
-// ========== EXPORTACIÓN A CSV Y PDF ==========
+// ========== EXPORTACIÓN ==========
 function getExpensesForCurrentMonth() {
   const now = new Date();
   const year = now.getFullYear();
@@ -309,7 +311,6 @@ async function exportToCSV() {
   const csvContent = rows.map(row => row.join(",")).join("\n");
   const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
   const fileName = `resumen_${new Date().toISOString().slice(0,7)}.csv`;
-  
   if ('showSaveFilePicker' in window && folderHandle) {
     try {
       const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
@@ -472,6 +473,7 @@ function updateAICoachAnalysis() {
   coachText.innerHTML = advice;
 }
 
+// ========== ACTUALIZACIÓN DE UI CON DESGLOSE VISUAL ==========
 function refreshUI() {
   if (!mainBalanceDisplay) return;
   const alloc = calculateAllocations(currentSalary);
@@ -497,9 +499,56 @@ function refreshUI() {
   
   const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
   const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
-  needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
-  wantsFree.textContent = `$${freeWants.toFixed(2)}`;
   
+  // Obtener listas de servicios comprometidos y gastos variables
+  const committedServicesNeeds = getCommittedServicesList('Necesidades');
+  const committedServicesWants = getCommittedServicesList('Deseos');
+  
+  const getSubcategoryBreakdown = (category) => {
+    const filtered = expenses.filter(exp => exp.category === category && exp.subcategory !== "Pago automático");
+    const breakdown = {};
+    filtered.forEach(exp => { breakdown[exp.subcategory] = (breakdown[exp.subcategory] || 0) + exp.amount; });
+    return breakdown;
+  };
+  const needsBreakdown = getSubcategoryBreakdown('Necesidades');
+  const wantsBreakdown = getSubcategoryBreakdown('Deseos');
+  
+  // Función para construir el HTML con diseño elegante
+  const buildFreeBoxHTML = (freeAmount, committedServices, manualBreakdown) => {
+    let html = `<div class="text-lg font-black text-emerald-700">$${Math.max(0, freeAmount).toFixed(2)}</div>`;
+    if (committedServices.length > 0) {
+      html += `<div class="border-t border-gray-300 my-2"></div>`;
+      html += `<div class="bg-amber-50/60 p-2 rounded-xl mb-2 text-amber-900">`;
+      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">📌 Próximos pagos</div>`;
+      html += `<div class="space-y-1 mt-1">`;
+      committedServices.forEach(s => {
+        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(s.name)} (día ${s.dueDay})</span><span class="font-mono font-semibold">$${s.amount.toFixed(2)}</span></div>`;
+      });
+      html += `</div></div>`;
+    }
+    const manualEntries = Object.entries(manualBreakdown);
+    if (manualEntries.length > 0) {
+      if (committedServices.length === 0) html += `<div class="border-t border-gray-300 my-2"></div>`;
+      html += `<div class="bg-blue-50/60 p-2 rounded-xl text-blue-900">`;
+      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">✍️ Gastos variables</div>`;
+      html += `<div class="space-y-1 mt-1">`;
+      manualEntries.forEach(([sub, amount]) => {
+        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(sub)}</span><span class="font-mono font-semibold">$${amount.toFixed(2)}</span></div>`;
+      });
+      html += `</div></div>`;
+    }
+    if (committedServices.length === 0 && manualEntries.length === 0) {
+      html += `<div class="border-t border-gray-300 my-2"></div>`;
+      html += `<div class="text-xs text-gray-400 italic text-center py-1">✨ Sin consumos ni pagos futuros.</div>`;
+    }
+    return html;
+  };
+  
+  // Asignar el HTML construido (no texto plano)
+  needsFree.innerHTML = buildFreeBoxHTML(freeNeeds, committedServicesNeeds, needsBreakdown);
+  wantsFree.innerHTML = buildFreeBoxHTML(freeWants, committedServicesWants, wantsBreakdown);
+  
+  // Control de edición de sueldo
   if (currentSalary > 0 && !isEditingSalary) {
     salaryInput.value = currentSalary;
     salaryDateInput.value = salaryDate;
@@ -623,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('exportCSVBtn').addEventListener('click', exportToCSV);
   document.getElementById('exportPDFBtn').addEventListener('click', exportToPDF);
   
-  // Botón selector de carpeta (añadido dinámicamente)
+  // Botón selector de carpeta
   const selectFolderBtn = document.createElement('button');
   selectFolderBtn.textContent = '📁 Seleccionar Carpeta de Reportes';
   selectFolderBtn.className = 'w-full mt-2 py-2 rounded-xl font-bold text-gray-700 bg-gray-200 shadow-md';
@@ -675,4 +724,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function escapeHtml(str) {
   return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);
-                               }
+        }

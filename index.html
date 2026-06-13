@@ -10,7 +10,7 @@
   <title>Presupuesto 50/30/20 | PWA con IA</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- Librerías para exportar PDF y Excel (CSV) -->
+  <!-- Librerías para exportar PDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <link rel="stylesheet" href="./style.css">
@@ -19,7 +19,7 @@
 
   <main class="max-w-md mx-auto px-4 pt-6 pb-24">
     
-    <!-- DASHBOARD (sin cambios relevantes, pero lo incluyo completo para mantener coherencia) -->
+    <!-- PESTAÑA 1: DASHBOARD -->
     <div id="tab-dashboard" class="tab-content space-y-6">
       <div class="neumorph-card p-5 rounded-2xl text-center">
         <h1 class="text-2xl font-bold text-gray-800">💰 50/30/20</h1>
@@ -111,7 +111,7 @@
       <div id="alertsContainer" class="space-y-2"></div>
     </div>
 
-    <!-- INGRESOS (aquí añadimos botones de exportación) -->
+    <!-- PESTAÑA 2: INGRESOS -->
     <div id="tab-income" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">📅 Período Quincenal Activo</h2>
@@ -149,7 +149,7 @@
       </div>
     </div>
 
-    <!-- GASTOS MANUALES (igual que antes) -->
+    <!-- PESTAÑA 3: GASTOS MANUALES -->
     <div id="tab-expenses" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">➕ Registrar gasto manual</h2>
@@ -173,7 +173,7 @@
       </div>
     </div>
 
-    <!-- CALENDARIO / SERVICIOS -->
+    <!-- PESTAÑA 4: CALENDARIO / SERVICIOS -->
     <div id="tab-calendar" class="tab-content hidden space-y-6">
       <div class="neumorph-card p-5 rounded-2xl">
         <h2 class="text-md font-bold text-gray-800">📌 Agregar servicio recurrente</h2>
@@ -191,13 +191,25 @@
     </div>
   </main>
 
-  <!-- Barra de navegación inferior (sin cambios) -->
+  <!-- Barra de navegación inferior -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 shadow-lg z-10">
     <div class="max-w-md mx-auto flex justify-around items-center py-2 px-4">
-      <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-indigo-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg><span class="text-xs">Inicio</span></button>
-      <button data-tab="income" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="text-xs">Ingresos</span></button>
-      <button data-tab="expenses" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg><span class="text-xs">Gastos</span></button>
-      <button data-tab="calendar" class="tab-btn flex flex-col items-center gap-1 text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span class="text-xs">Calendario</span></button>
+      <button data-tab="dashboard" class="tab-btn flex flex-col items-center gap-1 text-indigo-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        <span class="text-xs">Inicio</span>
+      </button>
+      <button data-tab="income" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span class="text-xs">Ingresos</span>
+      </button>
+      <button data-tab="expenses" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        <span class="text-xs">Gastos</span>
+      </button>
+      <button data-tab="calendar" class="tab-btn flex flex-col items-center gap-1 text-gray-500">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span class="text-xs">Calendario</span>
+      </button>
     </div>
   </nav>
 

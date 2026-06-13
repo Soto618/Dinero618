@@ -1,4 +1,5 @@
 // app.js - Presupuesto 50/30/20 con lógica quincenal y desglose completo
+// CORREGIDO: Ahora los gastos se descuentan correctamente del Libre Real
 
 // ======================== CLAVES LOCALSTORAGE ========================
 const STORAGE_KEYS = {
@@ -138,8 +139,6 @@ function updateSalaryOnly(newSalary, newDate) {
     alert('Selecciona una fecha de sueldo.');
     return false;
   }
-  const oldSalary = currentSalary;
-  const oldFortnight = currentFortnight;
   currentSalary = newSalary;
   salaryDate = newDate;
   currentFortnight = getFortnightFromDate(newDate);
@@ -165,13 +164,14 @@ function updateSalaryOnly(newSalary, newDate) {
   return true;
 }
 
+// ======================== FUNCIONES DE GASTOS (CORREGIDAS) ========================
 function addExpense(description, amount, category, subcategory = "Manual") {
   if (!currentSalary || currentSalary <= 0) {
-    alert('Primero establece un sueldo quincenal.');
+    alert('⚠️ Primero establece un sueldo quincenal válido.');
     return false;
   }
   if (!description.trim() || amount <= 0) {
-    alert('Completa concepto y monto > 0.');
+    alert('❌ Completa concepto y monto mayor a cero.');
     return false;
   }
   const alloc = calculateAllocations(currentSalary);
@@ -189,10 +189,11 @@ function addExpense(description, amount, category, subcategory = "Manual") {
     limit = alloc.wants;
     committed = committedWants;
   } else {
+    // Ahorro
     currentSpent = spentSavings;
     limit = alloc.savings;
     if (currentSpent + amount > limit + 0.01) {
-      alert(`Excedes presupuesto de Ahorro. Disponible: $${(limit - currentSpent).toFixed(2)}`);
+      alert(`⚠️ Excedes presupuesto de Ahorro. Disponible: $${(limit - currentSpent).toFixed(2)}`);
       return false;
     }
     expenses.push({ id: Date.now(), description: description.trim(), amount, category, subcategory });
@@ -200,13 +201,16 @@ function addExpense(description, amount, category, subcategory = "Manual") {
     refreshUI();
     return true;
   }
-  if (currentSpent + amount + committed > limit + 0.01) {
-    alert(`Excedes presupuesto de ${category}. Libre real: $${Math.max(0, limit - currentSpent - committed).toFixed(2)}`);
+  // Validar libre real (presupuesto - gastado - comprometido)
+  const freeReal = limit - currentSpent - committed;
+  if (amount > freeReal + 0.01) {
+    alert(`⚠️ No tienes suficiente dinero libre en ${category}. Libre real actual: $${Math.max(0, freeReal).toFixed(2)}`);
     return false;
   }
   expenses.push({ id: Date.now(), description: description.trim(), amount, category, subcategory });
   saveToLocalStorage();
   refreshUI();
+  console.log(`Gasto agregado: ${description} - $${amount} en ${category}. Nuevo libre real: ${(limit - (currentSpent+amount) - committed).toFixed(2)}`);
   return true;
 }
 
@@ -239,6 +243,7 @@ function renderExpenseList() {
   });
 }
 
+// ======================== FUNCIONES DE SERVICIOS ========================
 function renderServicesList() {
   if (!servicesListContainer) return;
   if (services.length === 0) {
@@ -528,6 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addExpense(desc, amount, cat, sub)) {
       document.getElementById('expenseDesc').value = '';
       document.getElementById('expenseAmount').value = '';
+      // Forzar actualización visual adicional (opcional)
+      setTimeout(() => refreshUI(), 10);
     }
   });
   

@@ -1,4 +1,4 @@
-// app.js - Motor IA mejorado + Escáner de recibos con Tesseract.js
+// app.js - Versión estable con desglose visual de compromisos y gastos
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -31,11 +31,6 @@ let budgetChart = null;
 let isEditingSalary = false;
 let folderHandle = null;
 
-// Variables para escáner
-let scannedText = "";
-let scannedAmount = null;
-let scannedDescription = "";
-
 // Elementos DOM
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
@@ -46,7 +41,6 @@ let needsFree, wantsFree;
 let expenseListContainer, alertsContainer, servicesListContainer;
 let salaryInput, salaryDateInput, setSalaryBtn, editSalaryBtn;
 let aiInput, aiProcessBtn, aiFeedback, coachText, refreshCoachBtn;
-let scanModal, scanFileInput, previewImage, scanningSpinner, scanResultText, confirmScanBtn, cancelScanBtn, closeModalBtn;
 
 // ========== FUNCIONES AUXILIARES ==========
 function calculateAllocations(salary) {
@@ -81,6 +75,14 @@ function calculateCommittedByCategory(category) {
     .reduce((sum, s) => sum + s.amount, 0);
 }
 
+function getCommittedServicesList(category) {
+  if (!currentFortnight) return [];
+  const range = getDueDayRange(currentFortnight);
+  return services
+    .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
+    .sort((a,b) => a.dueDay - b.dueDay);
+}
+
 function getTodaysDueServices() {
   const today = new Date().getDate();
   if (!currentFortnight) return [];
@@ -112,7 +114,7 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// ========== IA MEJORADA (incluye fecha) ==========
+// ========== IA CON FECHAS ==========
 function parseDateFromText(text) {
   const lower = text.toLowerCase();
   const today = new Date(); today.setHours(0,0,0,0);
@@ -222,62 +224,7 @@ function handleSalarySubmit(newSalary, newDate) {
   saveToLocalStorage(); refreshUI();
 }
 
-// ========== ESCÁNER DE RECIBOS (OCR) ==========
-async function processImageOCR(imageFile) {
-  scanningSpinner.classList.remove('hidden');
-  previewImage.style.display = 'none';
-  scanResultText.classList.add('hidden');
-  confirmScanBtn.disabled = true;
-  
-  try {
-    const worker = await Tesseract.createWorker('spa+eng');
-    const { data: { text } } = await worker.recognize(imageFile);
-    await worker.terminate();
-    scannedText = text;
-    // Extraer monto y descripción
-    const amountMatch = scannedText.match(/\b(\d+(?:[.,]\d{1,2})?)\s*(?:€|\$|USD|MXN)?\b/);
-    scannedAmount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null;
-    // Intentar encontrar una línea que parezca producto/descripción (primera línea no numérica)
-    const lines = scannedText.split('\n').filter(l => l.trim().length > 3);
-    scannedDescription = lines.find(l => !l.match(/\d/) && l.length < 50) || "Compra con tarjeta";
-    if (!scannedDescription || scannedDescription.length < 2) scannedDescription = "Recibo escaneado";
-    // Mostrar resultado
-    scanResultText.innerHTML = `<strong>Texto detectado:</strong><br>${scannedText.substring(0, 300)}${scannedText.length>300?'...':''}<br><br>
-                                <strong>💰 Monto sugerido:</strong> ${scannedAmount ? '$'+scannedAmount.toFixed(2) : 'No detectado'}<br>
-                                <strong>📝 Descripción:</strong> ${scannedDescription}`;
-    scanResultText.classList.remove('hidden');
-    if (scannedAmount && scannedAmount > 0) confirmScanBtn.disabled = false;
-    else confirmScanBtn.disabled = true;
-  } catch(e) {
-    console.error(e);
-    scanResultText.innerHTML = "❌ Error al procesar la imagen. Intenta con otra foto más clara.";
-    scanResultText.classList.remove('hidden');
-  } finally {
-    scanningSpinner.classList.add('hidden');
-  }
-}
-
-function openScanModal() {
-  scanModal.style.display = 'flex';
-  scannedText = ""; scannedAmount = null; scannedDescription = "";
-  previewImage.style.display = 'none'; previewImage.src = '';
-  scanResultText.classList.add('hidden');
-  confirmScanBtn.disabled = true;
-}
-
-function closeScanModal() { scanModal.style.display = 'none'; }
-
-function useScannedData() {
-  if (scannedAmount && scannedAmount > 0) {
-    document.getElementById('expenseDesc').value = scannedDescription;
-    document.getElementById('expenseAmount').value = scannedAmount;
-    closeScanModal();
-    // Opcional: llamar a la IA para clasificar automáticamente la descripción
-    processAIText(`${scannedDescription} ${scannedAmount}`);
-  } else alert("No se pudo detectar un monto válido en el recibo.");
-}
-
-// ========== EXPORTACIÓN CSV/PDF ==========
+// ========== EXPORTACIÓN ==========
 function getExpensesForCurrentMonth() {
   const now = new Date();
   const year = now.getFullYear();
@@ -336,52 +283,14 @@ async function selectExportFolder() {
       folderHandle = await window.showDirectoryPicker();
       alert("Carpeta seleccionada. Los reportes se guardarán ahí.");
     } catch(e) { console.warn(e); }
-  } else alert("Tu navegador no soporta selección de carpetas. Las descargas serán normales.");
+  } else alert("Tu navegador no soporta selección de carpetas.");
 }
 
-// ========== RENDERIZADO Y ACTUALIZACIÓN DE UI ==========
-function refreshUI() {
-  if (!mainBalanceDisplay) return;
-  const alloc = calculateAllocations(currentSalary);
-  const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
-  const committedNeeds = calculateCommittedByCategory('Necesidades');
-  const committedWants = calculateCommittedByCategory('Deseos');
-  salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
-  salaryDateDisplay.textContent = salaryDate ? `Depósito: ${salaryDate}` : 'Sin fecha';
-  fortnightDisplay.textContent = currentFortnight === 'first' ? 'Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? 'Segunda Quincena (Días 16-31)' : '');
-  mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
-  needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
-  wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
-  savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
-  needsAllocDetail.textContent = `$${alloc.needs.toFixed(2)}`;
-  wantsAllocDetail.textContent = `$${alloc.wants.toFixed(2)}`;
-  needsCommitted.textContent = `$${committedNeeds.toFixed(2)}`;
-  wantsCommitted.textContent = `$${committedWants.toFixed(2)}`;
-  needsSpent.textContent = `$${spentNeeds.toFixed(2)}`;
-  wantsSpent.textContent = `$${spentWants.toFixed(2)}`;
-  const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
-  const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
-  needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
-  wantsFree.textContent = `$${freeWants.toFixed(2)}`;
-  
-  if (currentSalary > 0 && !isEditingSalary) {
-    salaryInput.value = currentSalary; salaryDateInput.value = salaryDate;
-    salaryInput.disabled = true; salaryDateInput.disabled = true;
-    setSalaryBtn.classList.add('hidden'); editSalaryBtn.classList.remove('hidden');
-  } else {
-    salaryInput.disabled = false; salaryDateInput.disabled = false;
-    setSalaryBtn.classList.remove('hidden'); editSalaryBtn.classList.add('hidden');
-    setSalaryBtn.textContent = isEditingSalary ? 'Guardar Corrección' : 'Iniciar Quincena';
-  }
-  renderExpenseList();
-  renderServicesList();
-  renderAlerts();
-  updateAICoachAnalysis();
-  if (budgetChart && currentSalary) {
-    budgetChart.data.datasets[0].data = [Math.max(0, spentNeeds), Math.max(0, spentWants), Math.max(0, spentSavings)];
-    budgetChart.data.datasets[1].data = [alloc.needs, alloc.wants, alloc.savings];
-    budgetChart.update();
-  }
+// ========== RENDERIZADO CON DESGLOSE VISUAL ==========
+function renderServicesList() {
+  if (!servicesListContainer) return;
+  servicesListContainer.innerHTML = services.map(s => `<div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs"><div><div class="font-bold text-gray-700">${escapeHtml(s.name)}</div><div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div></div><button class="delete-service text-red-400" data-id="${s.id}">🗑️</button></div>`).join('');
+  document.querySelectorAll('.delete-service').forEach(btn => btn.addEventListener('click', () => { services = services.filter(item => item.id !== parseInt(btn.dataset.id)); saveToLocalStorage(); refreshUI(); }));
 }
 
 function renderExpenseList() {
@@ -394,12 +303,6 @@ function renderExpenseList() {
     </div>
   `).join('');
   document.querySelectorAll('.delete-expense').forEach(btn => btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id))));
-}
-
-function renderServicesList() {
-  if (!servicesListContainer) return;
-  servicesListContainer.innerHTML = services.map(s => `<div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs"><div><div class="font-bold text-gray-700">${escapeHtml(s.name)}</div><div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div></div><button class="delete-service text-red-400" data-id="${s.id}">🗑️</button></div>`).join('');
-  document.querySelectorAll('.delete-service').forEach(btn => btn.addEventListener('click', () => { services = services.filter(item => item.id !== parseInt(btn.dataset.id)); saveToLocalStorage(); refreshUI(); }));
 }
 
 function renderAlerts() {
@@ -427,6 +330,91 @@ function updateAICoachAnalysis() {
   coachText.innerHTML = advice;
 }
 
+function refreshUI() {
+  if (!mainBalanceDisplay) return;
+  const alloc = calculateAllocations(currentSalary);
+  const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
+  const committedNeeds = calculateCommittedByCategory('Necesidades');
+  const committedWants = calculateCommittedByCategory('Deseos');
+  salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
+  salaryDateDisplay.textContent = salaryDate ? `Depósito: ${salaryDate}` : 'Sin fecha';
+  fortnightDisplay.textContent = currentFortnight === 'first' ? '📆 Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? '📆 Segunda Quincena (Días 16-31)' : '');
+  mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
+  needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
+  wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
+  savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
+  needsAllocDetail.textContent = `$${alloc.needs.toFixed(2)}`;
+  wantsAllocDetail.textContent = `$${alloc.wants.toFixed(2)}`;
+  needsCommitted.textContent = `$${committedNeeds.toFixed(2)}`;
+  wantsCommitted.textContent = `$${committedWants.toFixed(2)}`;
+  needsSpent.textContent = `$${spentNeeds.toFixed(2)}`;
+  wantsSpent.textContent = `$${spentWants.toFixed(2)}`;
+  
+  const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
+  const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
+  
+  // Obtener listas de servicios comprometidos para mostrar en el desglose
+  const committedServicesNeeds = getCommittedServicesList('Necesidades');
+  const committedServicesWants = getCommittedServicesList('Deseos');
+  
+  // Desglose de gastos manuales (excluyendo pagos automáticos)
+  const getSubcategoryBreakdown = (category) => {
+    const filtered = expenses.filter(exp => exp.category === category && exp.subcategory !== "Pago automático" && exp.amount > 0);
+    const breakdown = {};
+    filtered.forEach(exp => { breakdown[exp.subcategory] = (breakdown[exp.subcategory] || 0) + exp.amount; });
+    return breakdown;
+  };
+  const needsBreakdown = getSubcategoryBreakdown('Necesidades');
+  const wantsBreakdown = getSubcategoryBreakdown('Deseos');
+  
+  // Construir HTML para la caja de Libre Real (con detalles)
+  const buildFreeBoxHTML = (freeAmount, committedServices, manualBreakdown) => {
+    let html = `<div class="text-lg font-black text-emerald-700">$${Math.max(0, freeAmount).toFixed(2)}</div>`;
+    if (committedServices.length > 0) {
+      html += `<div class="border-t border-gray-300 my-2"></div><div class="bg-amber-50/60 p-2 rounded-xl mb-2 text-amber-900"><div class="text-xs font-semibold uppercase">📌 Próximos pagos (comprometidos)</div><div class="space-y-1 mt-1">`;
+      committedServices.forEach(s => {
+        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(s.name)} (día ${s.dueDay})</span><span class="font-mono font-semibold">$${s.amount.toFixed(2)}</span></div>`;
+      });
+      html += `</div></div>`;
+    }
+    const manualEntries = Object.entries(manualBreakdown);
+    if (manualEntries.length > 0) {
+      html += `<div class="bg-blue-50/60 p-2 rounded-xl text-blue-900"><div class="text-xs font-semibold uppercase">✍️ Gastos variables realizados</div><div class="space-y-1 mt-1">`;
+      manualEntries.forEach(([sub, amount]) => {
+        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(sub)}</span><span class="font-mono font-semibold">$${amount.toFixed(2)}</span></div>`;
+      });
+      html += `</div></div>`;
+    }
+    if (committedServices.length === 0 && manualEntries.length === 0) {
+      html += `<div class="border-t border-gray-300 my-2"></div><div class="text-xs text-gray-400 italic text-center py-1">✨ Sin consumos ni pagos futuros.</div>`;
+    }
+    return html;
+  };
+  
+  needsFree.innerHTML = buildFreeBoxHTML(freeNeeds, committedServicesNeeds, needsBreakdown);
+  wantsFree.innerHTML = buildFreeBoxHTML(freeWants, committedServicesWants, wantsBreakdown);
+  
+  // Control de edición de sueldo
+  if (currentSalary > 0 && !isEditingSalary) {
+    salaryInput.value = currentSalary; salaryDateInput.value = salaryDate;
+    salaryInput.disabled = true; salaryDateInput.disabled = true;
+    setSalaryBtn.classList.add('hidden'); editSalaryBtn.classList.remove('hidden');
+  } else {
+    salaryInput.disabled = false; salaryDateInput.disabled = false;
+    setSalaryBtn.classList.remove('hidden'); editSalaryBtn.classList.add('hidden');
+    setSalaryBtn.textContent = isEditingSalary ? 'Guardar Corrección' : 'Iniciar Quincena';
+  }
+  renderExpenseList();
+  renderServicesList();
+  renderAlerts();
+  updateAICoachAnalysis();
+  if (budgetChart && currentSalary) {
+    budgetChart.data.datasets[0].data = [Math.max(0, spentNeeds), Math.max(0, spentWants), Math.max(0, spentSavings)];
+    budgetChart.data.datasets[1].data = [alloc.needs, alloc.wants, alloc.savings];
+    budgetChart.update();
+  }
+}
+
 function initChart() {
   const ctx = document.getElementById('budgetChart').getContext('2d');
   budgetChart = new Chart(ctx, { type: 'bar', data: { labels: ['Necesidades','Deseos','Ahorro'], datasets: [{ label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 }, { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }] }, options: { responsive: true, scales: { y: { beginAtZero: true } } } });
@@ -446,7 +434,6 @@ function initTabs() {
 
 // ========== EVENTOS Y ARRANQUE ==========
 document.addEventListener('DOMContentLoaded', () => {
-  // Asignar elementos DOM
   salaryDisplay = document.getElementById('salaryDisplay');
   salaryDateDisplay = document.getElementById('salaryDateDisplay');
   fortnightDisplay = document.getElementById('fortnightDisplay');
@@ -474,21 +461,13 @@ document.addEventListener('DOMContentLoaded', () => {
   aiFeedback = document.getElementById('aiFeedback');
   coachText = document.getElementById('coachText');
   refreshCoachBtn = document.getElementById('refreshCoachBtn');
-  scanModal = document.getElementById('scanModal');
-  scanFileInput = document.getElementById('scanFileInput');
-  previewImage = document.getElementById('previewImage');
-  scanningSpinner = document.getElementById('scanningSpinner');
-  scanResultText = document.getElementById('scanResultText');
-  confirmScanBtn = document.getElementById('confirmScanBtn');
-  cancelScanBtn = document.getElementById('cancelScanBtn');
-  closeModalBtn = document.getElementById('closeModalBtn');
   
   initChart();
   loadFromLocalStorage();
   initTabs();
   refreshUI();
   
-  // IA
+  // Eventos IA
   aiProcessBtn.addEventListener('click', () => processAIText(aiInput.value));
   aiInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processAIText(aiInput.value); });
   refreshCoachBtn.addEventListener('click', () => { updateAICoachAnalysis(); alert("Coach actualizado."); });
@@ -502,42 +481,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('exportPDFBtn').addEventListener('click', exportToPDF);
   document.getElementById('selectFolderBtn').addEventListener('click', selectExportFolder);
   
-  // Ingreso extra y otros
+  // Ingreso extra
   document.getElementById('addExtraIncomeBtn').addEventListener('click', () => { const desc = document.getElementById('extraIncomeDesc').value, amt = parseFloat(document.getElementById('extraIncomeAmount').value); if (addExtraIncome(desc, amt, new Date())) { document.getElementById('extraIncomeDesc').value = ''; document.getElementById('extraIncomeAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
   document.getElementById('addExpenseBtn').addEventListener('click', () => { const desc = document.getElementById('expenseDesc').value, amt = parseFloat(document.getElementById('expenseAmount').value), cat = document.getElementById('expenseCategory').value, sub = document.getElementById('expenseSubcategory').value; if (addExpense(desc, amt, cat, sub)) { document.getElementById('expenseDesc').value = ''; document.getElementById('expenseAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
   document.getElementById('clearExpensesBtn').addEventListener('click', () => { if (confirm('¿Reiniciar historial?')) { expenses = []; mainBalance = currentSalary; paidServiceIds = []; saveToLocalStorage(); refreshUI(); } });
   document.getElementById('resetBalanceBtn').addEventListener('click', () => { if (confirm('¿Poner saldo real a cero?')) { mainBalance = 0; saveToLocalStorage(); refreshUI(); } });
   document.getElementById('addServiceBtn').addEventListener('click', () => { const name = document.getElementById('serviceName').value, amount = parseFloat(document.getElementById('serviceAmount').value), cat = document.getElementById('serviceCategory').value, day = parseInt(document.getElementById('serviceDueDay').value); if (name && amount>0 && day>=1 && day<=31) { services.push({ id: Date.now(), name, amount, category: cat, dueDay: day }); saveToLocalStorage(); refreshUI(); document.getElementById('serviceName').value = ''; document.getElementById('serviceAmount').value = ''; document.getElementById('serviceDueDay').value = ''; } else alert('Datos válidos'); });
-  
-  // Escáner de recibos
-  const scanBtn = document.getElementById('scanReceiptBtn');
-  scanBtn.addEventListener('click', openScanModal);
-  closeModalBtn.addEventListener('click', closeScanModal);
-  cancelScanBtn.addEventListener('click', closeScanModal);
-  confirmScanBtn.addEventListener('click', useScannedData);
-  scanFileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = (ev) => { previewImage.src = ev.target.result; previewImage.style.display = 'block'; processImageOCR(file); };
-      reader.readAsDataURL(file);
-    }
-  });
-  document.getElementById('useCameraBtn').addEventListener('click', () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.capture = 'environment';
-    input.onchange = (e) => {
-      if (e.target.files && e.target.files[0]) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = (ev) => { previewImage.src = ev.target.result; previewImage.style.display = 'block'; processImageOCR(file); };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
-  });
 });
 
 function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }

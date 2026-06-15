@@ -1,4 +1,4 @@
-// app.js - Motor con IA mejorada, fechas, exportación y DESGLOSE VISUAL RESTAURADO
+// app.js - Motor IA mejorado + Escáner de recibos con Tesseract.js
 const STORAGE_KEYS = {
   SALARY: 'budget_salary',
   SALARY_DATE: 'budget_salary_date',
@@ -31,6 +31,11 @@ let budgetChart = null;
 let isEditingSalary = false;
 let folderHandle = null;
 
+// Variables para escáner
+let scannedText = "";
+let scannedAmount = null;
+let scannedDescription = "";
+
 // Elementos DOM
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
@@ -41,6 +46,7 @@ let needsFree, wantsFree;
 let expenseListContainer, alertsContainer, servicesListContainer;
 let salaryInput, salaryDateInput, setSalaryBtn, editSalaryBtn;
 let aiInput, aiProcessBtn, aiFeedback, coachText, refreshCoachBtn;
+let scanModal, scanFileInput, previewImage, scanningSpinner, scanResultText, confirmScanBtn, cancelScanBtn, closeModalBtn;
 
 // ========== FUNCIONES AUXILIARES ==========
 function calculateAllocations(salary) {
@@ -75,15 +81,6 @@ function calculateCommittedByCategory(category) {
     .reduce((sum, s) => sum + s.amount, 0);
 }
 
-// NUEVA: Obtener lista de servicios comprometidos (con detalles)
-function getCommittedServicesList(category) {
-  if (!currentFortnight) return [];
-  const range = getDueDayRange(currentFortnight);
-  return services
-    .filter(s => s.category === category && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id))
-    .sort((a,b) => a.dueDay - b.dueDay);
-}
-
 function getTodaysDueServices() {
   const today = new Date().getDate();
   if (!currentFortnight) return [];
@@ -91,7 +88,6 @@ function getTodaysDueServices() {
   return services.filter(s => s.dueDay === today && s.dueDay >= range.min && s.dueDay <= range.max && !paidServiceIds.includes(s.id));
 }
 
-// ========== PERSISTENCIA ==========
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY, currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE, salaryDate);
@@ -116,22 +112,13 @@ function loadFromLocalStorage() {
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
-// ========== IA MEJORADA ==========
+// ========== IA MEJORADA (incluye fecha) ==========
 function parseDateFromText(text) {
   const lower = text.toLowerCase();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0,0,0,0);
   if (lower.includes('hoy')) return today;
-  if (lower.includes('ayer')) {
-    const ayer = new Date(today);
-    ayer.setDate(today.getDate() - 1);
-    return ayer;
-  }
-  if (lower.includes('mañana')) {
-    const manana = new Date(today);
-    manana.setDate(today.getDate() + 1);
-    return manana;
-  }
+  if (lower.includes('ayer')) { const ayer = new Date(today); ayer.setDate(today.getDate()-1); return ayer; }
+  if (lower.includes('mañana')) { const manana = new Date(today); manana.setDate(today.getDate()+1); return manana; }
   const regex = /el (\d{1,2})(?: de)? (\w+)/i;
   const match = text.match(regex);
   if (match) {
@@ -141,9 +128,7 @@ function parseDateFromText(text) {
     let monthIndex = months.findIndex(m => m.startsWith(monthName));
     if (monthIndex === -1) monthIndex = new Date().getMonth();
     let date = new Date(today.getFullYear(), monthIndex, day);
-    if (date < today && monthIndex <= today.getMonth()) {
-      date = new Date(today.getFullYear() + 1, monthIndex, day);
-    }
+    if (date < today && monthIndex <= today.getMonth()) date = new Date(today.getFullYear()+1, monthIndex, day);
     return date;
   }
   return null;
@@ -156,48 +141,34 @@ function processAIText(text) {
   if (!expenseDate) expenseDate = new Date();
   const numberPattern = /\d+(?:[\.,]\d+)?/g;
   const matches = rawText.match(numberPattern);
-  if (!matches) {
-    showAIFeedback("⚠️ No detecté ningún monto. Ej: 'gasté 35 en gasolina ayer'", "text-red-600");
-    return;
-  }
+  if (!matches) { showAIFeedback("⚠️ No detecté monto. Ej: 'gasté 35 en gasolina'", "text-red-600"); return; }
   const amount = parseFloat(matches[0].replace(',', '.'));
-  if (isNaN(amount) || amount <= 0) {
-    showAIFeedback("⚠️ El monto no es válido.", "text-red-600");
-    return;
-  }
+  if (isNaN(amount) || amount <= 0) { showAIFeedback("Monto no válido", "text-red-600"); return; }
   let isIncome = false;
-  const incomeKeywords = ["gané", "ganancia", "ingreso", "recibí", "sumar", "extra", "depósito", "sueldo extra"];
+  const incomeKeywords = ["gané","ganancia","ingreso","recibí","sumar","extra","depósito","sueldo extra"];
   if (incomeKeywords.some(kw => rawText.includes(kw))) isIncome = true;
   let category = "Deseos";
   let subcategory = "🔄 Otros";
   let cleanDesc = text.replace(matches[0], "").replace(/gasté|gaste|gané|gane|en|un|una|unos|unas|hoy|ayer|mañana|el \d+ de \w+/gi, "").trim();
   if (!cleanDesc) cleanDesc = isIncome ? "Ingreso Extra" : "Gasto Inteligente";
   const keywordsMap = [
-    { keywords: ["super", "comida", "despensa", "walmart", "restaurante", "cenar", "comer", "almuerzo", "tacos", "pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
-    { keywords: ["gas", "gasolina", "carro", "auto", "jetta", "tuning", "filtro", "mantenimiento", "taller", "mecanico", "aceite", "reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
-    { keywords: ["medicina", "doctor", "clinica", "farmacia", "salud", "consulta", "dentista"], cat: "Necesidades", sub: "🏥 Salud" },
-    { keywords: ["luz", "agua", "gas natural", "internet", "wifi", "renta", "alquiler", "servicio"], cat: "Necesidades", sub: "🏠 Servicios" },
-    { keywords: ["juego", "steam", "gamepass", "ps plus", "xbox", "playstation", "ocio", "cine", "pelicula", "entretenimiento"], cat: "Deseos", sub: "🎮 Juegos y Ocio" },
-    { keywords: ["cheve", "antro", "bar", "salida", "pisto", "fiesta", "cafecito", "starbucks"], cat: "Deseos", sub: "🍽️ Salidas" },
-    { keywords: ["ropa", "tenis", "amazon", "aliexpress", "compra", "shoppear", "reloj", "regalo"], cat: "Deseos", sub: "🛍️ Compras" },
-    { keywords: ["ahorro", "guardar", "inversion", "crypto", "bitcoin", "fondo"], cat: "Ahorro/Deuda", sub: "💰 Fondo de Ahorro" },
-    { keywords: ["tarjeta", "credito", "prestamo", "deuda", "abono", "banco"], cat: "Ahorro/Deuda", sub: "💳 Pago Tarjeta/Prestamo" }
+    { keywords: ["super","comida","despensa","walmart","restaurante","cenar","comer","almuerzo","tacos","pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
+    { keywords: ["gas","gasolina","carro","auto","jetta","tuning","filtro","mantenimiento","taller","mecanico","aceite","reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
+    { keywords: ["medicina","doctor","clinica","farmacia","salud","consulta","dentista"], cat: "Necesidades", sub: "🏥 Salud" },
+    { keywords: ["luz","agua","gas natural","internet","wifi","renta","alquiler","servicio"], cat: "Necesidades", sub: "🏠 Servicios" },
+    { keywords: ["juego","steam","gamepass","ps plus","xbox","playstation","ocio","cine","pelicula","entretenimiento"], cat: "Deseos", sub: "🎮 Juegos y Ocio" },
+    { keywords: ["cheve","antro","bar","salida","pisto","fiesta","cafecito","starbucks"], cat: "Deseos", sub: "🍽️ Salidas" },
+    { keywords: ["ropa","tenis","amazon","aliexpress","compra","shoppear","reloj","regalo"], cat: "Deseos", sub: "🛍️ Compras" },
+    { keywords: ["ahorro","guardar","inversion","crypto","bitcoin","fondo"], cat: "Ahorro/Deuda", sub: "💰 Fondo de Ahorro" },
+    { keywords: ["tarjeta","credito","prestamo","deuda","abono","banco"], cat: "Ahorro/Deuda", sub: "💳 Pago Tarjeta/Prestamo" }
   ];
   for (const item of keywordsMap) {
-    if (item.keywords.some(kw => rawText.includes(kw))) {
-      category = item.cat;
-      subcategory = item.sub;
-      break;
-    }
+    if (item.keywords.some(kw => rawText.includes(kw))) { category = item.cat; subcategory = item.sub; break; }
   }
   if (isIncome) {
-    if (addExtraIncomeWithDate(cleanDesc, amount, expenseDate)) {
-      showAIFeedback(`✨ Ingreso extra: +$${amount.toFixed(2)} (${expenseDate.toLocaleDateString()})`, "text-emerald-600");
-    }
+    if (addExtraIncome(cleanDesc, amount, expenseDate)) showAIFeedback(`✨ Ingreso extra: +$${amount.toFixed(2)} (${expenseDate.toLocaleDateString()})`, "text-emerald-600");
   } else {
-    if (addExpenseWithDate(cleanDesc, amount, category, subcategory, expenseDate)) {
-      showAIFeedback(`✅ Gasto: $${amount.toFixed(2)} en ${category} → ${subcategory} (${expenseDate.toLocaleDateString()})`, "text-indigo-600");
-    }
+    if (addExpenseWithDate(cleanDesc, amount, category, subcategory, expenseDate)) showAIFeedback(`✅ Gasto: $${amount.toFixed(2)} en ${category} (${expenseDate.toLocaleDateString()})`, "text-indigo-600");
   }
   aiInput.value = "";
 }
@@ -206,46 +177,27 @@ function showAIFeedback(msg, colorClass) {
   aiFeedback.textContent = msg;
   aiFeedback.className = `text-[11px] mt-1.5 px-1 font-semibold ${colorClass}`;
   aiFeedback.classList.remove('hidden');
+  setTimeout(() => aiFeedback.classList.add('hidden'), 4000);
 }
 
+// ========== OPERACIONES FINANCIERAS ==========
 function addExpenseWithDate(description, amount, category, subcategory, dateObj) {
   if (isNaN(amount) || amount <= 0) return false;
-  if (amount > mainBalance) {
-    alert(`Fondos insuficientes. Saldo: $${mainBalance.toFixed(2)}`);
-    return false;
-  }
+  if (amount > mainBalance) { alert(`Saldo insuficiente: $${mainBalance.toFixed(2)}`); return false; }
   mainBalance -= amount;
-  expenses.push({
-    id: Date.now(),
-    description: description.trim(),
-    amount: parseFloat(amount),
-    category,
-    subcategory,
-    date: dateObj.toISOString()
-  });
+  expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), category, subcategory, date: dateObj.toISOString() });
   saveToLocalStorage();
   refreshUI();
   return true;
 }
 
-function addExtraIncomeWithDate(description, amount, dateObj) {
+function addExtraIncome(description, amount, dateObj) {
   if (amount <= 0) return false;
   mainBalance += amount;
-  expenses.push({
-    id: Date.now(),
-    description: `✨ GANANCIA: ${description}`,
-    amount: -amount,
-    category: 'Ingreso',
-    subcategory: 'Extra',
-    date: dateObj.toISOString()
-  });
+  expenses.push({ id: Date.now(), description: `✨ GANANCIA: ${description}`, amount: -amount, category: 'Ingreso', subcategory: 'Extra', date: dateObj.toISOString() });
   saveToLocalStorage();
   refreshUI();
   return true;
-}
-
-function addExtraIncome(description, amount) {
-  return addExtraIncomeWithDate(description, amount, new Date());
 }
 
 function addExpense(description, amount, category, subcategory) {
@@ -254,48 +206,84 @@ function addExpense(description, amount, category, subcategory) {
 
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
-  if (target) {
-    mainBalance += target.amount;
-    expenses = expenses.filter(exp => exp.id !== id);
-    saveToLocalStorage();
-    refreshUI();
-  }
+  if (target) { mainBalance += target.amount; expenses = expenses.filter(exp => exp.id !== id); saveToLocalStorage(); refreshUI(); }
 }
 
 function handleSalarySubmit(newSalary, newDate) {
   if (currentSalary > 0 && !isEditingSalary) {
-    if (confirm('¿Nuevo período? Se limpiará el historial actual.')) {
-      mainBalance = newSalary;
-      currentSalary = newSalary;
-      salaryDate = newDate;
-      currentFortnight = getFortnightFromDate(newDate);
-      expenses = [];
-      paidServiceIds = [];
-    } else return;
+    if (confirm('¿Nuevo período? Se limpiará el historial actual.')) { mainBalance = newSalary; currentSalary = newSalary; salaryDate = newDate; currentFortnight = getFortnightFromDate(newDate); expenses = []; paidServiceIds = []; }
+    else return;
   } else if (isEditingSalary) {
     const diff = newSalary - currentSalary;
-    mainBalance += diff;
-    currentSalary = newSalary;
-    salaryDate = newDate;
-    currentFortnight = getFortnightFromDate(newDate);
-    isEditingSalary = false;
+    mainBalance += diff; currentSalary = newSalary; salaryDate = newDate; currentFortnight = getFortnightFromDate(newDate); isEditingSalary = false;
   } else {
-    mainBalance = newSalary;
-    currentSalary = newSalary;
-    salaryDate = newDate;
-    currentFortnight = getFortnightFromDate(newDate);
+    mainBalance = newSalary; currentSalary = newSalary; salaryDate = newDate; currentFortnight = getFortnightFromDate(newDate);
   }
-  saveToLocalStorage();
-  refreshUI();
+  saveToLocalStorage(); refreshUI();
 }
 
-// ========== EXPORTACIÓN ==========
+// ========== ESCÁNER DE RECIBOS (OCR) ==========
+async function processImageOCR(imageFile) {
+  scanningSpinner.classList.remove('hidden');
+  previewImage.style.display = 'none';
+  scanResultText.classList.add('hidden');
+  confirmScanBtn.disabled = true;
+  
+  try {
+    const worker = await Tesseract.createWorker('spa+eng');
+    const { data: { text } } = await worker.recognize(imageFile);
+    await worker.terminate();
+    scannedText = text;
+    // Extraer monto y descripción
+    const amountMatch = scannedText.match(/\b(\d+(?:[.,]\d{1,2})?)\s*(?:€|\$|USD|MXN)?\b/);
+    scannedAmount = amountMatch ? parseFloat(amountMatch[1].replace(',', '.')) : null;
+    // Intentar encontrar una línea que parezca producto/descripción (primera línea no numérica)
+    const lines = scannedText.split('\n').filter(l => l.trim().length > 3);
+    scannedDescription = lines.find(l => !l.match(/\d/) && l.length < 50) || "Compra con tarjeta";
+    if (!scannedDescription || scannedDescription.length < 2) scannedDescription = "Recibo escaneado";
+    // Mostrar resultado
+    scanResultText.innerHTML = `<strong>Texto detectado:</strong><br>${scannedText.substring(0, 300)}${scannedText.length>300?'...':''}<br><br>
+                                <strong>💰 Monto sugerido:</strong> ${scannedAmount ? '$'+scannedAmount.toFixed(2) : 'No detectado'}<br>
+                                <strong>📝 Descripción:</strong> ${scannedDescription}`;
+    scanResultText.classList.remove('hidden');
+    if (scannedAmount && scannedAmount > 0) confirmScanBtn.disabled = false;
+    else confirmScanBtn.disabled = true;
+  } catch(e) {
+    console.error(e);
+    scanResultText.innerHTML = "❌ Error al procesar la imagen. Intenta con otra foto más clara.";
+    scanResultText.classList.remove('hidden');
+  } finally {
+    scanningSpinner.classList.add('hidden');
+  }
+}
+
+function openScanModal() {
+  scanModal.style.display = 'flex';
+  scannedText = ""; scannedAmount = null; scannedDescription = "";
+  previewImage.style.display = 'none'; previewImage.src = '';
+  scanResultText.classList.add('hidden');
+  confirmScanBtn.disabled = true;
+}
+
+function closeScanModal() { scanModal.style.display = 'none'; }
+
+function useScannedData() {
+  if (scannedAmount && scannedAmount > 0) {
+    document.getElementById('expenseDesc').value = scannedDescription;
+    document.getElementById('expenseAmount').value = scannedAmount;
+    closeScanModal();
+    // Opcional: llamar a la IA para clasificar automáticamente la descripción
+    processAIText(`${scannedDescription} ${scannedAmount}`);
+  } else alert("No se pudo detectar un monto válido en el recibo.");
+}
+
+// ========== EXPORTACIÓN CSV/PDF ==========
 function getExpensesForCurrentMonth() {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
   return expenses.filter(exp => {
-    if (!exp.date) return true;
+    if (!exp.date) return false;
     const d = new Date(exp.date);
     return d.getFullYear() === year && d.getMonth() === month;
   });
@@ -303,13 +291,10 @@ function getExpensesForCurrentMonth() {
 
 async function exportToCSV() {
   const monthExpenses = getExpensesForCurrentMonth();
-  const rows = [["Fecha", "Descripción", "Categoría", "Subcategoría", "Monto"]];
-  monthExpenses.forEach(exp => {
-    const fecha = exp.date ? new Date(exp.date).toLocaleDateString() : "Sin fecha";
-    rows.push([fecha, exp.description, exp.category, exp.subcategory, exp.amount.toString()]);
-  });
-  const csvContent = rows.map(row => row.join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const rows = [["Fecha","Descripción","Categoría","Subcategoría","Monto"]];
+  monthExpenses.forEach(exp => rows.push([new Date(exp.date).toLocaleDateString(), exp.description, exp.category, exp.subcategory, exp.amount.toString()]));
+  const csvContent = rows.map(row=>row.join(",")).join("\n");
+  const blob = new Blob(["\uFEFF"+csvContent], {type:"text/csv;charset=utf-8"});
   const fileName = `resumen_${new Date().toISOString().slice(0,7)}.csv`;
   if ('showSaveFilePicker' in window && folderHandle) {
     try {
@@ -317,48 +302,30 @@ async function exportToCSV() {
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
-      alert(`Archivo guardado en la carpeta seleccionada: ${fileName}`);
+      alert(`Guardado en carpeta: ${fileName}`);
       return;
-    } catch (err) { console.warn(err); }
+    } catch(e) {}
   }
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); URL.revokeObjectURL(link.href);
 }
 
 async function exportToPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
   const monthExpenses = getExpensesForCurrentMonth();
-  const tableData = monthExpenses.map(exp => [
-    exp.date ? new Date(exp.date).toLocaleDateString() : "",
-    exp.description,
-    exp.category,
-    exp.subcategory,
-    `$${exp.amount.toFixed(2)}`
-  ]);
-  doc.text(`Resumen Mensual - ${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}`, 14, 16);
-  doc.autoTable({
-    head: [["Fecha", "Concepto", "Categoría", "Subcategoría", "Monto"]],
-    body: tableData,
-    startY: 25,
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [79, 70, 229] }
-  });
+  const tableData = monthExpenses.map(exp => [new Date(exp.date).toLocaleDateString(), exp.description, exp.category, exp.subcategory, `$${exp.amount.toFixed(2)}`]);
+  doc.text(`Resumen ${new Date().toLocaleString('default',{month:'long',year:'numeric'})}`, 14, 16);
+  doc.autoTable({ head:[["Fecha","Concepto","Categoría","Subcat","Monto"]], body:tableData, startY:25, styles:{fontSize:8}, headStyles:{fillColor:[79,70,229]} });
   const fileName = `resumen_${new Date().toISOString().slice(0,7)}.pdf`;
   if ('showSaveFilePicker' in window && folderHandle) {
     try {
       const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
-      const pdfBlob = doc.output('blob');
-      await writable.write(pdfBlob);
+      await writable.write(doc.output('blob'));
       await writable.close();
-      alert(`PDF guardado en la carpeta seleccionada: ${fileName}`);
+      alert(`PDF guardado en carpeta: ${fileName}`);
       return;
-    } catch (err) { console.warn(err); }
+    } catch(e) {}
   }
   doc.save(fileName);
 }
@@ -367,208 +334,49 @@ async function selectExportFolder() {
   if ('showDirectoryPicker' in window) {
     try {
       folderHandle = await window.showDirectoryPicker();
-      alert("Carpeta seleccionada. Los próximos reportes se guardarán ahí.");
-    } catch (err) {
-      console.warn("No se seleccionó carpeta", err);
-    }
-  } else {
-    alert("Tu navegador no soporta selección de carpetas. Se usarán descargas normales.");
-  }
+      alert("Carpeta seleccionada. Los reportes se guardarán ahí.");
+    } catch(e) { console.warn(e); }
+  } else alert("Tu navegador no soporta selección de carpetas. Las descargas serán normales.");
 }
 
-// ========== RENDERIZADO DE LISTAS ==========
-function renderExpenseList() {
-  if (!expenseListContainer) return;
-  if (expenses.length === 0) {
-    expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos aún.</div>';
-    return;
-  }
-  expenseListContainer.innerHTML = expenses.slice().reverse().map(exp => `
-    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm text-sm">
-      <div>
-        <div class="font-medium text-gray-800">${escapeHtml(exp.description)}</div>
-        <div class="text-[10px] text-gray-400">${exp.date ? new Date(exp.date).toLocaleDateString() : 'Sin fecha'} • ${exp.category} • ${exp.subcategory}</div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">${exp.amount < 0 ? `+$${Math.abs(exp.amount).toFixed(2)}` : `$${exp.amount.toFixed(2)}`}</span>
-        <button class="delete-expense text-red-400 p-1" data-id="${exp.id}">🗑️</button>
-      </div>
-    </div>
-  `).join('');
-  document.querySelectorAll('.delete-expense').forEach(btn => btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id))));
-}
-
-function renderServicesList() {
-  if (!servicesListContainer) return;
-  if (services.length === 0) {
-    servicesListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📌 No hay servicios agregados.</div>';
-    return;
-  }
-  servicesListContainer.innerHTML = services.map(s => `
-    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs">
-      <div>
-        <div class="font-bold text-gray-700">${escapeHtml(s.name)}</div>
-        <div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div>
-      </div>
-      <button class="delete-service text-red-400" data-id="${s.id}">🗑️</button>
-    </div>
-  `).join('');
-  document.querySelectorAll('.delete-service').forEach(btn => btn.addEventListener('click', () => {
-    services = services.filter(item => item.id !== parseInt(btn.dataset.id));
-    saveToLocalStorage();
-    refreshUI();
-  }));
-}
-
-function renderAlerts() {
-  if (!alertsContainer) return;
-  const todayDue = getTodaysDueServices();
-  if (todayDue.length === 0) {
-    alertsContainer.innerHTML = '';
-    return;
-  }
-  alertsContainer.innerHTML = todayDue.map(s => `
-    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs">
-      <div><span class="font-bold text-amber-800">⚠️ Vence hoy:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div>
-      <button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar</button>
-    </div>
-  `).join('');
-  document.querySelectorAll('.pay-service-btn').forEach(btn => btn.addEventListener('click', () => {
-    const id = parseInt(btn.dataset.id);
-    if (!paidServiceIds.includes(id)) {
-      paidServiceIds.push(id);
-      addExpense(`${btn.dataset.name} (Cobro Fijo)`, parseFloat(btn.dataset.amount), btn.dataset.category, "Automático");
-    }
-  }));
-}
-
-function updateAICoachAnalysis() {
-  if (!currentSalary || currentSalary <= 0) {
-    coachText.innerHTML = "🧠 **Coach IA:** Aún no has configurado tu sueldo quincenal base. Ingresa tus datos en la pestaña de 'Ingresos' para activar mi análisis.";
-    return;
-  }
-  const alloc = calculateAllocations(currentSalary);
-  const { spentNeeds, spentWants } = getSpentByCategory();
-  const committedNeeds = calculateCommittedByCategory('Necesidades');
-  const committedWants = calculateCommittedByCategory('Deseos');
-  const freeNeeds = alloc.needs - spentNeeds - committedNeeds;
-  const freeWants = alloc.wants - spentWants - committedWants;
-  let advice = "🧠 **Coach IA:** ";
-  if (mainBalance <= 0) {
-    advice += "¡Alerta roja! Tu saldo real disponible está en ceros. Evita cualquier gasto en Deseos hasta la próxima quincena.";
-  } else if (freeNeeds < 0) {
-    advice += "Ojo, has sobrepasado tu presupuesto de Necesidades. Vas a tener que jalar fondos prestados de la bolsa de Deseos para equilibrarlo.";
-  } else if (freeWants < 0) {
-    advice += "Te has pasado de la raya en el presupuesto de Deseos (ocio/salidas). Pon candado a las compras espontáneas inmediatamente.";
-  } else {
-    const percentageWantsSpent = (spentWants / alloc.wants) * 100;
-    if (percentageWantsSpent > 75) {
-      advice += `Llevas consumido el ${percentageWantsSpent.toFixed(0)}% de tus Deseos libres. Te sugiero limitar el ocio, pero vas bien.`;
-    } else if (spentNeeds > spentWants) {
-      advice += "Excelente orden financiero. Estás priorizando la comida, el carro y tus cuentas fijas. ¡Mantén ese ritmo!";
-    } else {
-      advice += `Tus finanzas quincenales están estables. Tienes cupo sano en Necesidades ($${freeNeeds.toFixed(0)}) y Deseos ($${freeWants.toFixed(0)}). Recuerda guardar un colchón.`;
-    }
-  }
-  coachText.innerHTML = advice;
-}
-
-// ========== ACTUALIZACIÓN DE UI CON DESGLOSE VISUAL ==========
+// ========== RENDERIZADO Y ACTUALIZACIÓN DE UI ==========
 function refreshUI() {
   if (!mainBalanceDisplay) return;
   const alloc = calculateAllocations(currentSalary);
   const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
-  
   salaryDisplay.textContent = currentSalary ? `$${currentSalary.toFixed(2)}` : '—';
   salaryDateDisplay.textContent = salaryDate ? `Depósito: ${salaryDate}` : 'Sin fecha';
   fortnightDisplay.textContent = currentFortnight === 'first' ? 'Primera Quincena (Días 1-15)' : (currentFortnight === 'second' ? 'Segunda Quincena (Días 16-31)' : '');
   mainBalanceDisplay.textContent = `$${mainBalance.toFixed(2)}`;
-  
   needsAlloc.textContent = `$${alloc.needs.toFixed(2)}`;
   wantsAlloc.textContent = `$${alloc.wants.toFixed(2)}`;
   savingsAlloc.textContent = `$${alloc.savings.toFixed(2)}`;
   needsAllocDetail.textContent = `$${alloc.needs.toFixed(2)}`;
   wantsAllocDetail.textContent = `$${alloc.wants.toFixed(2)}`;
-  
   needsCommitted.textContent = `$${committedNeeds.toFixed(2)}`;
   wantsCommitted.textContent = `$${committedWants.toFixed(2)}`;
   needsSpent.textContent = `$${spentNeeds.toFixed(2)}`;
   wantsSpent.textContent = `$${spentWants.toFixed(2)}`;
-  
   const freeNeeds = currentSalary ? (alloc.needs - spentNeeds - committedNeeds) : 0;
   const freeWants = currentSalary ? (alloc.wants - spentWants - committedWants) : 0;
+  needsFree.textContent = `$${freeNeeds.toFixed(2)}`;
+  wantsFree.textContent = `$${freeWants.toFixed(2)}`;
   
-  // Obtener listas de servicios comprometidos y gastos variables
-  const committedServicesNeeds = getCommittedServicesList('Necesidades');
-  const committedServicesWants = getCommittedServicesList('Deseos');
-  
-  const getSubcategoryBreakdown = (category) => {
-    const filtered = expenses.filter(exp => exp.category === category && exp.subcategory !== "Pago automático");
-    const breakdown = {};
-    filtered.forEach(exp => { breakdown[exp.subcategory] = (breakdown[exp.subcategory] || 0) + exp.amount; });
-    return breakdown;
-  };
-  const needsBreakdown = getSubcategoryBreakdown('Necesidades');
-  const wantsBreakdown = getSubcategoryBreakdown('Deseos');
-  
-  // Función para construir el HTML con diseño elegante
-  const buildFreeBoxHTML = (freeAmount, committedServices, manualBreakdown) => {
-    let html = `<div class="text-lg font-black text-emerald-700">$${Math.max(0, freeAmount).toFixed(2)}</div>`;
-    if (committedServices.length > 0) {
-      html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="bg-amber-50/60 p-2 rounded-xl mb-2 text-amber-900">`;
-      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">📌 Próximos pagos</div>`;
-      html += `<div class="space-y-1 mt-1">`;
-      committedServices.forEach(s => {
-        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(s.name)} (día ${s.dueDay})</span><span class="font-mono font-semibold">$${s.amount.toFixed(2)}</span></div>`;
-      });
-      html += `</div></div>`;
-    }
-    const manualEntries = Object.entries(manualBreakdown);
-    if (manualEntries.length > 0) {
-      if (committedServices.length === 0) html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="bg-blue-50/60 p-2 rounded-xl text-blue-900">`;
-      html += `<div class="text-xs font-semibold uppercase tracking-wide flex items-center gap-1">✍️ Gastos variables</div>`;
-      html += `<div class="space-y-1 mt-1">`;
-      manualEntries.forEach(([sub, amount]) => {
-        html += `<div class="flex justify-between items-center text-xs"><span class="truncate">${escapeHtml(sub)}</span><span class="font-mono font-semibold">$${amount.toFixed(2)}</span></div>`;
-      });
-      html += `</div></div>`;
-    }
-    if (committedServices.length === 0 && manualEntries.length === 0) {
-      html += `<div class="border-t border-gray-300 my-2"></div>`;
-      html += `<div class="text-xs text-gray-400 italic text-center py-1">✨ Sin consumos ni pagos futuros.</div>`;
-    }
-    return html;
-  };
-  
-  // Asignar el HTML construido (no texto plano)
-  needsFree.innerHTML = buildFreeBoxHTML(freeNeeds, committedServicesNeeds, needsBreakdown);
-  wantsFree.innerHTML = buildFreeBoxHTML(freeWants, committedServicesWants, wantsBreakdown);
-  
-  // Control de edición de sueldo
   if (currentSalary > 0 && !isEditingSalary) {
-    salaryInput.value = currentSalary;
-    salaryDateInput.value = salaryDate;
-    salaryInput.disabled = true;
-    salaryDateInput.disabled = true;
-    setSalaryBtn.classList.add('hidden');
-    editSalaryBtn.classList.remove('hidden');
+    salaryInput.value = currentSalary; salaryDateInput.value = salaryDate;
+    salaryInput.disabled = true; salaryDateInput.disabled = true;
+    setSalaryBtn.classList.add('hidden'); editSalaryBtn.classList.remove('hidden');
   } else {
-    salaryInput.disabled = false;
-    salaryDateInput.disabled = false;
-    setSalaryBtn.classList.remove('hidden');
-    editSalaryBtn.classList.add('hidden');
+    salaryInput.disabled = false; salaryDateInput.disabled = false;
+    setSalaryBtn.classList.remove('hidden'); editSalaryBtn.classList.add('hidden');
     setSalaryBtn.textContent = isEditingSalary ? 'Guardar Corrección' : 'Iniciar Quincena';
   }
-  
   renderExpenseList();
   renderServicesList();
   renderAlerts();
   updateAICoachAnalysis();
-  
   if (budgetChart && currentSalary) {
     budgetChart.data.datasets[0].data = [Math.max(0, spentNeeds), Math.max(0, spentWants), Math.max(0, spentSavings)];
     budgetChart.data.datasets[1].data = [alloc.needs, alloc.wants, alloc.savings];
@@ -576,51 +384,69 @@ function refreshUI() {
   }
 }
 
+function renderExpenseList() {
+  if (!expenseListContainer) return;
+  if (expenses.length === 0) { expenseListContainer.innerHTML = '<div class="text-center text-gray-400 text-sm py-4">📭 No hay movimientos aún.</div>'; return; }
+  expenseListContainer.innerHTML = expenses.slice().reverse().map(exp => `
+    <div class="bg-white/60 rounded-xl p-3 flex justify-between items-center shadow-sm text-sm">
+      <div><div class="font-medium text-gray-800">${escapeHtml(exp.description)}</div><div class="text-[10px] text-gray-400">${exp.date ? new Date(exp.date).toLocaleDateString() : 'Sin fecha'} • ${exp.category} • ${exp.subcategory}</div></div>
+      <div class="flex items-center gap-2"><span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">${exp.amount < 0 ? `+$${Math.abs(exp.amount).toFixed(2)}` : `$${exp.amount.toFixed(2)}`}</span><button class="delete-expense text-red-400 p-1" data-id="${exp.id}">🗑️</button></div>
+    </div>
+  `).join('');
+  document.querySelectorAll('.delete-expense').forEach(btn => btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id))));
+}
+
+function renderServicesList() {
+  if (!servicesListContainer) return;
+  servicesListContainer.innerHTML = services.map(s => `<div class="bg-white/60 rounded-xl p-3 flex justify-between items-center text-xs"><div><div class="font-bold text-gray-700">${escapeHtml(s.name)}</div><div>$${s.amount.toFixed(2)} • ${s.category} • Día ${s.dueDay}</div></div><button class="delete-service text-red-400" data-id="${s.id}">🗑️</button></div>`).join('');
+  document.querySelectorAll('.delete-service').forEach(btn => btn.addEventListener('click', () => { services = services.filter(item => item.id !== parseInt(btn.dataset.id)); saveToLocalStorage(); refreshUI(); }));
+}
+
+function renderAlerts() {
+  if (!alertsContainer) return;
+  const todayDue = getTodaysDueServices();
+  if (todayDue.length === 0) { alertsContainer.innerHTML = ''; return; }
+  alertsContainer.innerHTML = todayDue.map(s => `<div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center text-xs"><div><span class="font-bold text-amber-800">⚠️ Vence hoy:</span> ${escapeHtml(s.name)} ($${s.amount.toFixed(2)})</div><button class="pay-service-btn bg-emerald-600 text-white px-2 py-1 rounded-lg" data-id="${s.id}" data-name="${s.name}" data-amount="${s.amount}" data-category="${s.category}">Pagar</button></div>`).join('');
+  document.querySelectorAll('.pay-service-btn').forEach(btn => btn.addEventListener('click', () => { const id = parseInt(btn.dataset.id); if (!paidServiceIds.includes(id)) { paidServiceIds.push(id); addExpense(`${btn.dataset.name} (Cobro Fijo)`, parseFloat(btn.dataset.amount), btn.dataset.category, "Automático"); } }));
+}
+
+function updateAICoachAnalysis() {
+  if (!currentSalary || currentSalary <= 0) { coachText.innerHTML = "🧠 Coach IA: Configura tu sueldo en Ingresos."; return; }
+  const alloc = calculateAllocations(currentSalary);
+  const { spentNeeds, spentWants } = getSpentByCategory();
+  const committedNeeds = calculateCommittedByCategory('Necesidades');
+  const committedWants = calculateCommittedByCategory('Deseos');
+  const freeNeeds = alloc.needs - spentNeeds - committedNeeds;
+  const freeWants = alloc.wants - spentWants - committedWants;
+  let advice = "🧠 Coach IA: ";
+  if (mainBalance <= 0) advice += "¡Alerta! Saldo real en cero. Evita gastos en Deseos.";
+  else if (freeNeeds < 0) advice += "Sobrepasaste Necesidades. Reajusta gastos variables.";
+  else if (freeWants < 0) advice += "Excediste Deseos. Pon límite al ocio.";
+  else if (spentWants/alloc.wants > 0.75) advice += `Has gastado el ${Math.round(spentWants/alloc.wants*100)}% de Deseos. Controla salidas.`;
+  else advice += `Finanzas estables. Cupo Necesidades $${freeNeeds.toFixed(0)} y Deseos $${freeWants.toFixed(0)}. Sigue así.`;
+  coachText.innerHTML = advice;
+}
+
 function initChart() {
   const ctx = document.getElementById('budgetChart').getContext('2d');
-  budgetChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: ['Necesidades', 'Deseos', 'Ahorro'],
-      datasets: [
-        { label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 },
-        { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }
-      ]
-    },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
-  });
+  budgetChart = new Chart(ctx, { type: 'bar', data: { labels: ['Necesidades','Deseos','Ahorro'], datasets: [{ label: 'Gastado', data: [0,0,0], backgroundColor: '#6366f1', borderRadius: 6 }, { label: 'Presupuesto', data: [0,0,0], backgroundColor: '#e2e8f0', borderRadius: 6 }] }, options: { responsive: true, scales: { y: { beginAtZero: true } } } });
 }
 
 function initTabs() {
   const tabs = document.querySelectorAll('.tab-btn');
   const contents = document.querySelectorAll('.tab-content');
-  if (tabs.length === 0) {
-    console.error("No se encontraron botones de pestaña");
-    return;
-  }
-  function showTab(tabId) {
-    contents.forEach(content => content.classList.add('hidden'));
-    const activeContent = document.getElementById(`tab-${tabId}`);
-    if (activeContent) activeContent.classList.remove('hidden');
-    tabs.forEach(btn => {
-      const btnTab = btn.getAttribute('data-tab');
-      if (btnTab === tabId) {
-        btn.classList.add('active');
-        btn.classList.remove('text-gray-500');
-        btn.classList.add('text-indigo-600');
-      } else {
-        btn.classList.remove('active');
-        btn.classList.add('text-gray-500');
-        btn.classList.remove('text-indigo-600');
-      }
-    });
-  }
-  tabs.forEach(btn => btn.addEventListener('click', () => showTab(btn.getAttribute('data-tab'))));
-  showTab('dashboard');
+  tabs.forEach(btn => btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    contents.forEach(c => c.classList.add('hidden'));
+    document.getElementById(`tab-${target}`).classList.remove('hidden');
+    tabs.forEach(t => { t.classList.remove('text-indigo-600'); t.classList.add('text-gray-500'); });
+    btn.classList.add('text-indigo-600'); btn.classList.remove('text-gray-500');
+  }));
 }
 
 // ========== EVENTOS Y ARRANQUE ==========
 document.addEventListener('DOMContentLoaded', () => {
+  // Asignar elementos DOM
   salaryDisplay = document.getElementById('salaryDisplay');
   salaryDateDisplay = document.getElementById('salaryDateDisplay');
   fortnightDisplay = document.getElementById('fortnightDisplay');
@@ -648,80 +474,70 @@ document.addEventListener('DOMContentLoaded', () => {
   aiFeedback = document.getElementById('aiFeedback');
   coachText = document.getElementById('coachText');
   refreshCoachBtn = document.getElementById('refreshCoachBtn');
+  scanModal = document.getElementById('scanModal');
+  scanFileInput = document.getElementById('scanFileInput');
+  previewImage = document.getElementById('previewImage');
+  scanningSpinner = document.getElementById('scanningSpinner');
+  scanResultText = document.getElementById('scanResultText');
+  confirmScanBtn = document.getElementById('confirmScanBtn');
+  cancelScanBtn = document.getElementById('cancelScanBtn');
+  closeModalBtn = document.getElementById('closeModalBtn');
   
   initChart();
   loadFromLocalStorage();
   initTabs();
   refreshUI();
   
-  // Eventos IA
+  // IA
   aiProcessBtn.addEventListener('click', () => processAIText(aiInput.value));
   aiInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') processAIText(aiInput.value); });
   refreshCoachBtn.addEventListener('click', () => { updateAICoachAnalysis(); alert("Coach actualizado."); });
   
   // Sueldo
-  setSalaryBtn.addEventListener('click', () => {
-    const val = parseFloat(salaryInput.value);
-    const date = salaryDateInput.value;
-    if (val > 0 && date) { handleSalarySubmit(val, date); document.querySelector('.tab-btn[data-tab="dashboard"]').click(); }
-    else alert('Sueldo y fecha válidos');
-  });
+  setSalaryBtn.addEventListener('click', () => { const val = parseFloat(salaryInput.value), date = salaryDateInput.value; if (val>0 && date) { handleSalarySubmit(val, date); document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } else alert('Sueldo y fecha válidos'); });
   editSalaryBtn.addEventListener('click', () => { isEditingSalary = true; refreshUI(); });
   
   // Exportación
   document.getElementById('exportCSVBtn').addEventListener('click', exportToCSV);
   document.getElementById('exportPDFBtn').addEventListener('click', exportToPDF);
+  document.getElementById('selectFolderBtn').addEventListener('click', selectExportFolder);
   
-  // Botón selector de carpeta
-  const selectFolderBtn = document.createElement('button');
-  selectFolderBtn.textContent = '📁 Seleccionar Carpeta de Reportes';
-  selectFolderBtn.className = 'w-full mt-2 py-2 rounded-xl font-bold text-gray-700 bg-gray-200 shadow-md';
-  document.querySelector('#tab-income .space-y-3').appendChild(selectFolderBtn);
-  selectFolderBtn.addEventListener('click', selectExportFolder);
+  // Ingreso extra y otros
+  document.getElementById('addExtraIncomeBtn').addEventListener('click', () => { const desc = document.getElementById('extraIncomeDesc').value, amt = parseFloat(document.getElementById('extraIncomeAmount').value); if (addExtraIncome(desc, amt, new Date())) { document.getElementById('extraIncomeDesc').value = ''; document.getElementById('extraIncomeAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
+  document.getElementById('addExpenseBtn').addEventListener('click', () => { const desc = document.getElementById('expenseDesc').value, amt = parseFloat(document.getElementById('expenseAmount').value), cat = document.getElementById('expenseCategory').value, sub = document.getElementById('expenseSubcategory').value; if (addExpense(desc, amt, cat, sub)) { document.getElementById('expenseDesc').value = ''; document.getElementById('expenseAmount').value = ''; document.querySelector('.tab-btn[data-tab="dashboard"]').click(); } });
+  document.getElementById('clearExpensesBtn').addEventListener('click', () => { if (confirm('¿Reiniciar historial?')) { expenses = []; mainBalance = currentSalary; paidServiceIds = []; saveToLocalStorage(); refreshUI(); } });
+  document.getElementById('resetBalanceBtn').addEventListener('click', () => { if (confirm('¿Poner saldo real a cero?')) { mainBalance = 0; saveToLocalStorage(); refreshUI(); } });
+  document.getElementById('addServiceBtn').addEventListener('click', () => { const name = document.getElementById('serviceName').value, amount = parseFloat(document.getElementById('serviceAmount').value), cat = document.getElementById('serviceCategory').value, day = parseInt(document.getElementById('serviceDueDay').value); if (name && amount>0 && day>=1 && day<=31) { services.push({ id: Date.now(), name, amount, category: cat, dueDay: day }); saveToLocalStorage(); refreshUI(); document.getElementById('serviceName').value = ''; document.getElementById('serviceAmount').value = ''; document.getElementById('serviceDueDay').value = ''; } else alert('Datos válidos'); });
   
-  // Otros botones
-  document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
-    const desc = document.getElementById('extraIncomeDesc').value;
-    const amt = parseFloat(document.getElementById('extraIncomeAmount').value);
-    if (addExtraIncome(desc, amt)) {
-      document.getElementById('extraIncomeDesc').value = '';
-      document.getElementById('extraIncomeAmount').value = '';
-      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
+  // Escáner de recibos
+  const scanBtn = document.getElementById('scanReceiptBtn');
+  scanBtn.addEventListener('click', openScanModal);
+  closeModalBtn.addEventListener('click', closeScanModal);
+  cancelScanBtn.addEventListener('click', closeScanModal);
+  confirmScanBtn.addEventListener('click', useScannedData);
+  scanFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (ev) => { previewImage.src = ev.target.result; previewImage.style.display = 'block'; processImageOCR(file); };
+      reader.readAsDataURL(file);
     }
   });
-  document.getElementById('addExpenseBtn').addEventListener('click', () => {
-    const desc = document.getElementById('expenseDesc').value;
-    const amt = parseFloat(document.getElementById('expenseAmount').value);
-    const cat = document.getElementById('expenseCategory').value;
-    const sub = document.getElementById('expenseSubcategory').value;
-    if (addExpense(desc, amt, cat, sub)) {
-      document.getElementById('expenseDesc').value = '';
-      document.getElementById('expenseAmount').value = '';
-      document.querySelector('.tab-btn[data-tab="dashboard"]').click();
-    }
-  });
-  document.getElementById('clearExpensesBtn').addEventListener('click', () => {
-    if (confirm('¿Reiniciar historial?')) { expenses = []; mainBalance = currentSalary; paidServiceIds = []; saveToLocalStorage(); refreshUI(); }
-  });
-  document.getElementById('resetBalanceBtn').addEventListener('click', () => {
-    if (confirm('¿Poner saldo real a cero?')) { mainBalance = 0; saveToLocalStorage(); refreshUI(); }
-  });
-  document.getElementById('addServiceBtn').addEventListener('click', () => {
-    const name = document.getElementById('serviceName').value;
-    const amount = parseFloat(document.getElementById('serviceAmount').value);
-    const cat = document.getElementById('serviceCategory').value;
-    const day = parseInt(document.getElementById('serviceDueDay').value);
-    if (name && amount > 0 && day >= 1 && day <= 31) {
-      services.push({ id: Date.now(), name, amount, category: cat, dueDay: day });
-      saveToLocalStorage();
-      refreshUI();
-      document.getElementById('serviceName').value = '';
-      document.getElementById('serviceAmount').value = '';
-      document.getElementById('serviceDueDay').value = '';
-    } else alert('Datos válidos');
+  document.getElementById('useCameraBtn').addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment';
+    input.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (ev) => { previewImage.src = ev.target.result; previewImage.style.display = 'block'; processImageOCR(file); };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
   });
 });
 
-function escapeHtml(str) {
-  return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);
-        }
+function escapeHtml(str) { return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]); }

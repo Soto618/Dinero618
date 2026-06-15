@@ -1,4 +1,4 @@
-// app.js — Dinero618 v2.0 | Todas las mejoras aplicadas
+// app.js — Dinero618 v2.1 | Quincenas: 1-14 / 15-31 | IA con aprendizaje
 'use strict';
 
 // ═══════════════════════════════════════════════
@@ -11,7 +11,8 @@ const STORAGE_KEYS = {
   SERVICES:           'recurring_services',
   PAID_SERVICES_IDS:  'paid_services_ids',
   MAIN_BALANCE:       'main_balance',
-  ARCHIVED_FORTNIGHTS:'archived_fortnights'
+  ARCHIVED_FORTNIGHTS:'archived_fortnights',
+  IA_CORRECTIONS:     'ia_corrections'        // aprendizaje de IA
 };
 
 const DEFAULT_SERVICES = [
@@ -42,7 +43,10 @@ let isEditingSalary    = false;
 let folderHandle       = null;
 let activeFilter       = 'all';
 
-// DOM refs — assigned in DOMContentLoaded
+// Aprendizaje de IA
+let iaCorrections = {};   // { "palabra clave": { category, subcategory } }
+
+// DOM refs
 let salaryDisplay, salaryDateDisplay, fortnightDisplay, mainBalanceDisplay;
 let needsAlloc, wantsAlloc, savingsAlloc;
 let needsAllocDetail, wantsAllocDetail, savingsAllocDetail;
@@ -54,12 +58,12 @@ let salaryInput, salaryDateInput, setSalaryBtn, editSalaryBtn;
 let aiInput, aiProcessBtn, aiFeedback, coachText, refreshCoachBtn;
 let expenseError, archivedFortnightsContainer;
 
-
 // ═══════════════════════════════════════════════
-// TOAST SYSTEM — reemplaza todos los alert()
+// TOAST SYSTEM
 // ═══════════════════════════════════════════════
 function showToast(msg, type = 'info', duration = 3000) {
   const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = msg;
@@ -74,24 +78,23 @@ function showToast(msg, type = 'info', duration = 3000) {
 }
 
 // ═══════════════════════════════════════════════
-// CONFIRM MODAL — reemplaza todos los confirm()
+// CONFIRM MODAL
 // ═══════════════════════════════════════════════
 function showConfirm(msg) {
   return new Promise(resolve => {
     const overlay = document.getElementById('confirm-overlay');
+    if (!overlay) { resolve(confirm(msg)); return; }
     document.getElementById('confirm-msg').textContent = msg;
     overlay.classList.add('show');
-
-    const okBtn     = document.getElementById('confirm-ok');
+    const okBtn = document.getElementById('confirm-ok');
     const cancelBtn = document.getElementById('confirm-cancel');
-
     function cleanup(result) {
       overlay.classList.remove('show');
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       resolve(result);
     }
-    function onOk()     { cleanup(true);  }
+    function onOk() { cleanup(true); }
     function onCancel() { cleanup(false); }
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
@@ -99,7 +102,7 @@ function showConfirm(msg) {
 }
 
 // ═══════════════════════════════════════════════
-// VIBRACIÓN (feedback háptico)
+// VIBRACIÓN
 // ═══════════════════════════════════════════════
 function vibrate(pattern = 50) {
   if ('vibrate' in navigator) navigator.vibrate(pattern);
@@ -112,15 +115,13 @@ function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
 }
-
 function fmt(amount) {
   return `$${Math.abs(amount).toFixed(2)}`;
 }
-
 function pulseBalance() {
   if (!mainBalanceDisplay) return;
   mainBalanceDisplay.classList.remove('balance-pulse');
-  void mainBalanceDisplay.offsetWidth; // reflow
+  void mainBalanceDisplay.offsetWidth;
   mainBalanceDisplay.classList.add('balance-pulse');
   mainBalanceDisplay.addEventListener('animationend', () => {
     mainBalanceDisplay.classList.remove('balance-pulse');
@@ -134,7 +135,7 @@ function calculateAllocations(salary) {
 function getSpentByCategory() {
   let spentNeeds = 0, spentWants = 0, spentSavings = 0;
   expenses.forEach(exp => {
-    if (exp.amount <= 0) return; // ingresos no cuentan
+    if (exp.amount <= 0) return; // solo gastos
     if (exp.category === 'Necesidades')  spentNeeds   += exp.amount;
     else if (exp.category === 'Deseos')  spentWants   += exp.amount;
     else if (exp.category === 'Ahorro/Deuda') spentSavings += exp.amount;
@@ -142,14 +143,23 @@ function getSpentByCategory() {
   return { spentNeeds, spentWants, spentSavings };
 }
 
+// ═══════════════════════════════════════════════
+// LÓGICA DE QUINCENAS (CORREGIDA)
+// Primera quincena: días 1 al 14
+// Segunda quincena: días 15 al 31
+// ═══════════════════════════════════════════════
 function getFortnightFromDate(dateStr) {
   if (!dateStr) return '';
-  const day = new Date(dateStr).getUTCDate();
-  return day <= 15 ? 'first' : 'second';
+  const day = new Date(dateStr).getDate();
+  return day >= 15 ? 'second' : 'first';
 }
 
 function getDueDayRange(fortnight) {
-  return fortnight === 'first' ? { min: 1, max: 15 } : { min: 16, max: 31 };
+  if (fortnight === 'first') {
+    return { min: 1, max: 14 };
+  } else {
+    return { min: 15, max: 31 };
+  }
 }
 
 function calculateCommittedByCategory(category) {
@@ -181,8 +191,22 @@ function getTodaysDueServices() {
 }
 
 // ═══════════════════════════════════════════════
-// LOCAL STORAGE
+// LOCAL STORAGE (incluye correcciones IA)
 // ═══════════════════════════════════════════════
+function loadCorrections() {
+  const saved = localStorage.getItem(STORAGE_KEYS.IA_CORRECTIONS);
+  if (saved) iaCorrections = JSON.parse(saved);
+}
+function saveCorrection(originalText, category, subcategory) {
+  let key = originalText.toLowerCase()
+    .replace(/\d+(?:[\.,]\d+)?/g, '')
+    .replace(/gasté|gaste|en|un|una|el|la|los|las|de|para|por|con|pagué|pague|compré|compre/gi, '')
+    .trim();
+  if (key.length < 3) return;
+  iaCorrections[key] = { category, subcategory };
+  localStorage.setItem(STORAGE_KEYS.IA_CORRECTIONS, JSON.stringify(iaCorrections));
+}
+
 function saveToLocalStorage() {
   localStorage.setItem(STORAGE_KEYS.SALARY,              currentSalary.toString());
   localStorage.setItem(STORAGE_KEYS.SALARY_DATE,         salaryDate);
@@ -197,22 +221,16 @@ function loadFromLocalStorage() {
   const savedSalary   = localStorage.getItem(STORAGE_KEYS.SALARY);
   currentSalary       = savedSalary ? parseFloat(savedSalary) : 0;
   salaryDate          = localStorage.getItem(STORAGE_KEYS.SALARY_DATE) || '';
-
   const savedExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
   expenses            = savedExpenses ? JSON.parse(savedExpenses) : [];
-
   const savedServices = localStorage.getItem(STORAGE_KEYS.SERVICES);
   services            = savedServices ? JSON.parse(savedServices) : JSON.parse(JSON.stringify(DEFAULT_SERVICES));
-
   const savedPaid     = localStorage.getItem(STORAGE_KEYS.PAID_SERVICES_IDS);
   paidServiceIds      = savedPaid ? JSON.parse(savedPaid) : [];
-
   const savedBalance  = localStorage.getItem(STORAGE_KEYS.MAIN_BALANCE);
   mainBalance         = savedBalance ? parseFloat(savedBalance) : 0;
-
   const savedArchived = localStorage.getItem(STORAGE_KEYS.ARCHIVED_FORTNIGHTS);
   archivedFortnights  = savedArchived ? JSON.parse(savedArchived) : [];
-
   currentFortnight = getFortnightFromDate(salaryDate);
 }
 
@@ -226,7 +244,6 @@ function archiveCurrentFortnight() {
   const extraIncome = expenses
     .filter(e => e.amount < 0)
     .reduce((sum, e) => sum - e.amount, 0);
-
   archivedFortnights.unshift({
     salary:       currentSalary,
     salaryDate,
@@ -239,12 +256,11 @@ function archiveCurrentFortnight() {
     spentSavings,
     expenseCount: expenses.filter(e => e.amount > 0).length
   });
-  // Máximo 12 quincenas archivadas (6 meses)
   if (archivedFortnights.length > 12) archivedFortnights.length = 12;
 }
 
 // ═══════════════════════════════════════════════
-// PARSER IA — fechas
+// IA: PARSEO DE FECHAS Y PROCESAMIENTO CON APRENDIZAJE
 // ═══════════════════════════════════════════════
 function parseDateFromText(text) {
   const lower = text.toLowerCase();
@@ -291,29 +307,42 @@ function processAIText(text) {
 
   let category    = "Deseos";
   let subcategory = "🔄 Otros";
-
   let cleanDesc = text
     .replace(matches[0], "")
     .replace(/gasté|gaste|gané|gane|en|un|una|unos|unas|hoy|ayer|mañana|el \d+ de \w+/gi, "")
     .trim();
   if (!cleanDesc) cleanDesc = isIncome ? "Ingreso Extra" : "Gasto Inteligente";
 
-  const keywordsMap = [
-    { keywords: ["super","comida","despensa","walmart","restaurante","cenar","comer","almuerzo","tacos","pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
-    { keywords: ["gas","gasolina","carro","auto","jetta","tuning","filtro","mantenimiento","taller","mecanico","aceite","reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
-    { keywords: ["medicina","doctor","clinica","farmacia","salud","consulta","dentista"], cat: "Necesidades", sub: "🏥 Salud" },
-    { keywords: ["luz","agua","gas natural","internet","wifi","renta","alquiler","servicio"], cat: "Necesidades", sub: "🏠 Servicios" },
-    { keywords: ["juego","steam","gamepass","ps plus","xbox","playstation","ocio","cine","pelicula","entretenimiento"], cat: "Deseos", sub: "🎮 Juegos y Ocio" },
-    { keywords: ["cheve","antro","bar","salida","pisto","fiesta","cafecito","starbucks"], cat: "Deseos", sub: "🍽️ Salidas" },
-    { keywords: ["ropa","tenis","amazon","aliexpress","compra","shoppear","reloj","regalo"], cat: "Deseos", sub: "🛍️ Compras" },
-    { keywords: ["ahorro","guardar","inversion","crypto","bitcoin","fondo"], cat: "Ahorro/Deuda", sub: "💰 Fondo de Ahorro" },
-    { keywords: ["tarjeta","credito","prestamo","deuda","abono","banco"], cat: "Ahorro/Deuda", sub: "💳 Pago Tarjeta/Préstamo" }
-  ];
-  for (const item of keywordsMap) {
-    if (item.keywords.some(kw => rawText.includes(kw))) {
-      category    = item.cat;
-      subcategory = item.sub;
+  // 1. Verificar si hay una corrección guardada para esta descripción
+  let correction = null;
+  for (let [pattern, data] of Object.entries(iaCorrections)) {
+    if (cleanDesc.toLowerCase().includes(pattern)) {
+      correction = data;
       break;
+    }
+  }
+  if (correction) {
+    category = correction.category;
+    subcategory = correction.subcategory;
+  } else {
+    // 2. Mapeo por palabras clave (fallback)
+    const keywordsMap = [
+      { keywords: ["super","comida","despensa","walmart","restaurante","cenar","comer","almuerzo","tacos","pizza"], cat: "Necesidades", sub: "🍔 Comida y Súper" },
+      { keywords: ["gas","gasolina","carro","auto","jetta","tuning","filtro","mantenimiento","taller","mecanico","aceite","reparacion"], cat: "Necesidades", sub: "🚗 Gasolina y Carro" },
+      { keywords: ["medicina","doctor","clinica","farmacia","salud","consulta","dentista"], cat: "Necesidades", sub: "🏥 Salud" },
+      { keywords: ["luz","agua","gas natural","internet","wifi","renta","alquiler","servicio"], cat: "Necesidades", sub: "🏠 Servicios" },
+      { keywords: ["juego","steam","gamepass","ps plus","xbox","playstation","ocio","cine","pelicula","entretenimiento"], cat: "Deseos", sub: "🎮 Juegos y Ocio" },
+      { keywords: ["cheve","antro","bar","salida","pisto","fiesta","cafecito","starbucks"], cat: "Deseos", sub: "🍽️ Salidas" },
+      { keywords: ["ropa","tenis","amazon","aliexpress","compra","shoppear","reloj","regalo"], cat: "Deseos", sub: "🛍️ Compras" },
+      { keywords: ["ahorro","guardar","inversion","crypto","bitcoin","fondo"], cat: "Ahorro/Deuda", sub: "💰 Fondo de Ahorro" },
+      { keywords: ["tarjeta","credito","prestamo","deuda","abono","banco"], cat: "Ahorro/Deuda", sub: "💳 Pago Tarjeta/Préstamo" }
+    ];
+    for (const item of keywordsMap) {
+      if (item.keywords.some(kw => rawText.includes(kw))) {
+        category = item.cat;
+        subcategory = item.sub;
+        break;
+      }
     }
   }
 
@@ -339,10 +368,6 @@ function showAIFeedback(msg, colorClass) {
 // ═══════════════════════════════════════════════
 // OPERACIONES FINANCIERAS
 // ═══════════════════════════════════════════════
-
-/**
- * FIXED: saldo insuficiente → feedback inline, no alert
- */
 function addExpenseWithDate(description, amount, category, subcategory, dateObj) {
   if (isNaN(amount) || amount <= 0) return false;
   if (amount > mainBalance) {
@@ -379,17 +404,13 @@ function hideExpenseError() {
   expenseError.classList.add('hidden');
 }
 
-/**
- * FIXED: ingresos guardados como amount negativo para compatibilidad
- * FIXED: deleteExpenseById maneja correctamente tanto gastos como ingresos
- */
 function addExtraIncome(description, amount, dateObj) {
   if (amount <= 0) return false;
   mainBalance += amount;
   expenses.push({
     id:          Date.now(),
     description: `✨ GANANCIA: ${description}`,
-    amount:      -amount,           // negativo = ingreso
+    amount:      -amount,
     category:    'Ingreso',
     subcategory: 'Extra',
     date:        dateObj.toISOString(),
@@ -407,15 +428,10 @@ function addExpense(description, amount, category, subcategory) {
   return addExpenseWithDate(description, amount, category, subcategory, new Date());
 }
 
-/**
- * FIXED: al eliminar un ingreso (amount negativo) se RESTA del balance (no suma)
- * al eliminar un gasto (amount positivo) se SUMA al balance (devolución correcta)
- */
 function deleteExpenseById(id) {
   const target = expenses.find(exp => exp.id === id);
   if (!target) return;
-  // Revertir el efecto: si fue gasto (+amount), devolvemos; si fue ingreso (-amount), restamos
-  mainBalance -= target.amount; // gasto: -= positivo = suma; ingreso: -= negativo = resta
+  mainBalance -= target.amount;  // si es gasto (+) se suma, si es ingreso (-) se resta
   expenses = expenses.filter(exp => exp.id !== id);
   saveToLocalStorage();
   refreshUI();
@@ -455,21 +471,17 @@ async function handleSalarySubmit(newSalary, newDate) {
 }
 
 // ═══════════════════════════════════════════════
-// FILTRO DE HISTORIAL
+// FILTRO Y EXPORTACIÓN
 // ═══════════════════════════════════════════════
 function getFilteredExpenses() {
   switch (activeFilter) {
     case 'all':       return expenses;
-    case 'quincena':
-      return expenses.filter(e => e.salaryDate === salaryDate);
-    default:
-      return expenses.filter(e => e.category === activeFilter);
+    case 'quincena':  return expenses.filter(e => e.salaryDate === salaryDate);
+    case 'Ingreso':   return expenses.filter(e => e.category === 'Ingreso');
+    default:          return expenses.filter(e => e.category === activeFilter);
   }
 }
 
-// ═══════════════════════════════════════════════
-// EXPORTACIÓN
-// ═══════════════════════════════════════════════
 function getExpensesForCurrentMonth() {
   const now   = new Date();
   const year  = now.getFullYear();
@@ -479,6 +491,23 @@ function getExpensesForCurrentMonth() {
     const d = new Date(exp.date);
     return d.getFullYear() === year && d.getMonth() === month;
   });
+}
+
+async function saveFile(blob, fileName) {
+  if ('showSaveFilePicker' in window && folderHandle) {
+    try {
+      const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
+      const writable   = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (e) { console.warn('folder save failed, fallback', e); }
+  }
+  const link = document.createElement('a');
+  link.href  = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 async function exportToCSV() {
@@ -516,23 +545,6 @@ async function exportToPDF() {
   const fileName = `dinero618_${new Date().toISOString().slice(0, 7)}.pdf`;
   await saveFile(doc.output('blob'), fileName);
   showToast(`PDF guardado: ${fileName}`, 'success');
-}
-
-async function saveFile(blob, fileName) {
-  if ('showSaveFilePicker' in window && folderHandle) {
-    try {
-      const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
-      const writable   = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return;
-    } catch (e) { console.warn('folder save failed, fallback', e); }
-  }
-  const link = document.createElement('a');
-  link.href  = URL.createObjectURL(blob);
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 async function selectExportFolder() {
@@ -598,12 +610,36 @@ function renderExpenseList() {
         <span class="font-bold ${exp.amount < 0 ? 'text-emerald-600' : 'text-gray-800'}">
           ${exp.amount < 0 ? `+${fmt(exp.amount)}` : fmt(exp.amount)}
         </span>
+        <button class="edit-expense text-blue-400 p-1 active:scale-90" data-id="${exp.id}">✏️</button>
         <button class="delete-expense text-red-400 p-1 active:scale-90" data-id="${exp.id}">🗑️</button>
       </div>
     </div>
   `).join('');
+
+  // Botones eliminar
   document.querySelectorAll('.delete-expense').forEach(btn =>
     btn.addEventListener('click', () => deleteExpenseById(parseInt(btn.dataset.id)))
+  );
+  // Botones editar (aprendizaje)
+  document.querySelectorAll('.edit-expense').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const expense = expenses.find(e => e.id === id);
+      if (!expense) return;
+      const newCat = prompt('Nueva categoría (Necesidades/Deseos/Ahorro/Deuda/Ingreso):', expense.category);
+      if (!newCat) return;
+      const newSub = prompt('Nueva subcategoría:', expense.subcategory);
+      if (!newSub) return;
+      // Guardar corrección para la IA (solo si es gasto, no ingreso)
+      if (expense.amount > 0 && expense.category !== 'Ingreso') {
+        saveCorrection(expense.description, newCat, newSub);
+        showToast('Corrección guardada. La IA aprenderá para futuros gastos similares.', 'info');
+      }
+      expense.category = newCat;
+      expense.subcategory = newSub;
+      saveToLocalStorage();
+      refreshUI();
+    })
   );
 }
 
@@ -648,7 +684,7 @@ function renderArchivedFortnights() {
     return;
   }
   archivedFortnightsContainer.innerHTML = archivedFortnights.map((q, i) => {
-    const label = q.fortnight === 'first' ? '1ª Quincena' : '2ª Quincena';
+    const label = q.fortnight === 'first' ? '1ª Quincena (1-14)' : '2ª Quincena (15-31)';
     const date  = q.salaryDate ? new Date(q.salaryDate).toLocaleDateString('es', { month: 'short', year: 'numeric' }) : '';
     return `
       <div class="bg-white/60 rounded-xl p-3 text-xs shadow-sm">
@@ -678,7 +714,6 @@ function updateAICoachAnalysis() {
   const freeNeeds = alloc.needs - spentNeeds - committedNeeds;
   const freeWants = alloc.wants - spentWants - committedWants;
   const balancePct = (mainBalance / currentSalary) * 100;
-
   let advice = "🧠 ";
   if (mainBalance <= 0) {
     advice += "⚠️ <b>Saldo real en cero.</b> Evita nuevos gastos hasta el próximo ingreso.";
@@ -696,22 +731,16 @@ function updateAICoachAnalysis() {
   coachText.innerHTML = advice;
 }
 
-// ═══════════════════════════════════════════════
-// DESGLOSE VISUAL (cuadro de Libre Real)
-// ═══════════════════════════════════════════════
 function buildFreeBoxHTML(freeAmount, committedServices, manualBreakdown) {
   const isNegative = freeAmount < 0;
   let html = `<div class="text-lg font-black ${isNegative ? 'text-red-500' : 'text-emerald-700'}">
     ${isNegative ? '-' : ''}${fmt(freeAmount)}
   </div>`;
-
   if (committedServices.length > 0) {
-    html += `
-      <div class="border-t border-gray-300 my-2"></div>
+    html += `<div class="border-t border-gray-300 my-2"></div>
       <div class="bg-amber-50/60 p-2 rounded-xl mb-2 text-amber-900">
         <div class="text-xs font-semibold uppercase tracking-wide">📌 Próximos pagos</div>
-        <div class="space-y-1 mt-1">
-    `;
+        <div class="space-y-1 mt-1">`;
     committedServices.forEach(s => {
       html += `<div class="flex justify-between items-center text-xs">
         <span class="truncate">${escapeHtml(s.name)} <span class="text-amber-600">(día ${s.dueDay})</span></span>
@@ -720,14 +749,11 @@ function buildFreeBoxHTML(freeAmount, committedServices, manualBreakdown) {
     });
     html += `</div></div>`;
   }
-
   const manualEntries = Object.entries(manualBreakdown);
   if (manualEntries.length > 0) {
-    html += `
-      <div class="bg-blue-50/60 p-2 rounded-xl text-blue-900">
+    html += `<div class="bg-blue-50/60 p-2 rounded-xl text-blue-900">
         <div class="text-xs font-semibold uppercase tracking-wide">✍️ Gastos realizados</div>
-        <div class="space-y-1 mt-1">
-    `;
+        <div class="space-y-1 mt-1">`;
     manualEntries.forEach(([sub, amount]) => {
       html += `<div class="flex justify-between items-center text-xs">
         <span class="truncate">${escapeHtml(sub)}</span>
@@ -736,7 +762,6 @@ function buildFreeBoxHTML(freeAmount, committedServices, manualBreakdown) {
     });
     html += `</div></div>`;
   }
-
   if (committedServices.length === 0 && manualEntries.length === 0) {
     html += `<div class="border-t border-gray-300 my-2"></div>
       <div class="text-xs text-gray-400 italic text-center py-1">✨ Sin consumos ni pagos futuros.</div>`;
@@ -744,34 +769,26 @@ function buildFreeBoxHTML(freeAmount, committedServices, manualBreakdown) {
   return html;
 }
 
-// ═══════════════════════════════════════════════
-// REFRESH UI — núcleo principal
-// ═══════════════════════════════════════════════
 function refreshUI() {
   if (!mainBalanceDisplay) return;
-
   const alloc = calculateAllocations(currentSalary);
   const { spentNeeds, spentWants, spentSavings } = getSpentByCategory();
   const committedNeeds = calculateCommittedByCategory('Necesidades');
   const committedWants = calculateCommittedByCategory('Deseos');
 
-  // Header
   salaryDisplay.textContent     = currentSalary ? fmt(currentSalary) : '—';
   salaryDateDisplay.textContent = salaryDate ? `Depósito: ${salaryDate}` : 'Sin fecha configurada';
   fortnightDisplay.textContent  = currentFortnight === 'first'
-    ? '📆 Primera Quincena (Días 1–15)'
+    ? '📆 Primera Quincena (Días 1–14)'
     : currentFortnight === 'second'
-      ? '📆 Segunda Quincena (Días 16–31)'
+      ? '📆 Segunda Quincena (Días 15–31)'
       : '';
   mainBalanceDisplay.textContent = fmt(mainBalance);
   mainBalanceDisplay.className = `text-xl font-black ${mainBalance <= 0 ? 'text-red-500' : 'text-emerald-700'}`;
 
-  // Tarjetas 50/30/20
   needsAlloc.textContent   = fmt(alloc.needs);
   wantsAlloc.textContent   = fmt(alloc.wants);
   savingsAlloc.textContent = fmt(alloc.savings);
-
-  // Detalles necesidades / deseos
   needsAllocDetail.textContent   = fmt(alloc.needs);
   wantsAllocDetail.textContent   = fmt(alloc.wants);
   savingsAllocDetail.textContent = fmt(alloc.savings);
@@ -787,12 +804,11 @@ function refreshUI() {
   savingsFree.textContent = fmt(freeSavings);
   savingsFree.className   = `text-sm font-bold ${freeSavings < 0 ? 'text-red-500' : 'text-emerald-700'}`;
 
-  // Desglose comprometidos / manuales
   const committedServicesNeeds = getCommittedServicesList('Necesidades');
   const committedServicesWants = getCommittedServicesList('Deseos');
   const getSubcategoryBreakdown = (category) => {
-    const filtered   = expenses.filter(exp => exp.category === category && exp.subcategory !== "Automático" && exp.amount > 0);
-    const breakdown  = {};
+    const filtered = expenses.filter(exp => exp.category === category && exp.subcategory !== "Automático" && exp.amount > 0);
+    const breakdown = {};
     filtered.forEach(exp => { breakdown[exp.subcategory] = (breakdown[exp.subcategory] || 0) + exp.amount; });
     return breakdown;
   };
@@ -801,15 +817,15 @@ function refreshUI() {
 
   // Control edición sueldo
   if (currentSalary > 0 && !isEditingSalary) {
-    salaryInput.value           = currentSalary;
-    salaryDateInput.value       = salaryDate;
-    salaryInput.disabled        = true;
-    salaryDateInput.disabled    = true;
+    salaryInput.value        = currentSalary;
+    salaryDateInput.value    = salaryDate;
+    salaryInput.disabled     = true;
+    salaryDateInput.disabled = true;
     setSalaryBtn.classList.add('hidden');
     editSalaryBtn.classList.remove('hidden');
   } else {
-    salaryInput.disabled        = false;
-    salaryDateInput.disabled    = false;
+    salaryInput.disabled     = false;
+    salaryDateInput.disabled = false;
     setSalaryBtn.classList.remove('hidden');
     editSalaryBtn.classList.add('hidden');
     setSalaryBtn.textContent = isEditingSalary ? '💾 Guardar Corrección' : '✨ Iniciar Quincena';
@@ -821,7 +837,6 @@ function refreshUI() {
   renderArchivedFortnights();
   updateAICoachAnalysis();
 
-  // Gráfica
   if (budgetChart && currentSalary) {
     budgetChart.data.datasets[0].data = [
       Math.max(0, spentNeeds),
@@ -833,9 +848,6 @@ function refreshUI() {
   }
 }
 
-// ═══════════════════════════════════════════════
-// GRÁFICA
-// ═══════════════════════════════════════════════
 function initChart() {
   const ctx = document.getElementById('budgetChart').getContext('2d');
   budgetChart = new Chart(ctx, {
@@ -856,11 +868,8 @@ function initChart() {
   });
 }
 
-// ═══════════════════════════════════════════════
-// TABS
-// ═══════════════════════════════════════════════
 function initTabs() {
-  const tabs     = document.querySelectorAll('.tab-btn');
+  const tabs = document.querySelectorAll('.tab-btn');
   const contents = document.querySelectorAll('.tab-content');
   tabs.forEach(btn => btn.addEventListener('click', () => {
     const target = btn.dataset.tab;
@@ -873,11 +882,10 @@ function initTabs() {
 }
 
 // ═══════════════════════════════════════════════
-// ARRANQUE
+// EVENTOS Y ARRANQUE
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-
-  // DOM refs
+  // Asignar referencias DOM
   salaryDisplay              = document.getElementById('salaryDisplay');
   salaryDateDisplay          = document.getElementById('salaryDateDisplay');
   fortnightDisplay           = document.getElementById('fortnightDisplay');
@@ -911,15 +919,15 @@ document.addEventListener('DOMContentLoaded', () => {
   expenseError               = document.getElementById('expenseError');
   archivedFortnightsContainer= document.getElementById('archivedFortnightsContainer');
 
+  loadCorrections();
   initChart();
   loadFromLocalStorage();
   initTabs();
   refreshUI();
 
-  // ── IA ──
+  // IA
   aiProcessBtn.addEventListener('click', () => processAIText(aiInput.value));
   aiInput.addEventListener('keypress', e => { if (e.key === 'Enter') processAIText(aiInput.value); });
-  // Scroll al input en iOS al abrir teclado
   aiInput.addEventListener('focus', () => {
     setTimeout(() => aiInput.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350);
   });
@@ -928,9 +936,9 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Coach actualizado ✓', 'info');
   });
 
-  // ── Sueldo ──
+  // Sueldo
   setSalaryBtn.addEventListener('click', async () => {
-    const val  = parseFloat(salaryInput.value);
+    const val = parseFloat(salaryInput.value);
     const date = salaryDateInput.value;
     if (val > 0 && date) {
       await handleSalarySubmit(val, date);
@@ -941,50 +949,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   editSalaryBtn.addEventListener('click', () => { isEditingSalary = true; refreshUI(); });
 
-  // ── Exportación ──
+  // Exportación
   document.getElementById('exportCSVBtn').addEventListener('click', exportToCSV);
   document.getElementById('exportPDFBtn').addEventListener('click', exportToPDF);
   document.getElementById('selectFolderBtn').addEventListener('click', selectExportFolder);
 
-  // ── Ingreso extra ──
+  // Ingreso extra
   document.getElementById('addExtraIncomeBtn').addEventListener('click', () => {
     const desc = document.getElementById('extraIncomeDesc').value.trim();
-    const amt  = parseFloat(document.getElementById('extraIncomeAmount').value);
+    const amt = parseFloat(document.getElementById('extraIncomeAmount').value);
     if (!desc || isNaN(amt) || amt <= 0) {
       showToast('Concepto y monto válidos requeridos', 'error');
       return;
     }
     if (addExtraIncome(desc, amt, new Date())) {
-      document.getElementById('extraIncomeDesc').value   = '';
+      document.getElementById('extraIncomeDesc').value = '';
       document.getElementById('extraIncomeAmount').value = '';
       showToast(`+${fmt(amt)} sumado al saldo ✓`, 'success');
       document.querySelector('.tab-btn[data-tab="dashboard"]').click();
     }
   });
 
-  // ── Gasto manual ──
+  // Gasto manual
   document.getElementById('addExpenseBtn').addEventListener('click', () => {
     const desc = document.getElementById('expenseDesc').value.trim();
-    const amt  = parseFloat(document.getElementById('expenseAmount').value);
-    const cat  = document.getElementById('expenseCategory').value;
-    const sub  = document.getElementById('expenseSubcategory').value;
+    const amt = parseFloat(document.getElementById('expenseAmount').value);
+    const cat = document.getElementById('expenseCategory').value;
+    const sub = document.getElementById('expenseSubcategory').value;
     if (!desc || isNaN(amt) || amt <= 0) {
       showExpenseError('Completa concepto y monto');
       return;
     }
     if (addExpense(desc, amt, cat, sub)) {
-      document.getElementById('expenseDesc').value   = '';
+      document.getElementById('expenseDesc').value = '';
       document.getElementById('expenseAmount').value = '';
       showToast(`Gasto registrado: ${fmt(amt)} ✓`, 'success');
       document.querySelector('.tab-btn[data-tab="dashboard"]').click();
     }
   });
 
-  // ── Limpiar historial ──
+  // Limpiar historial
   document.getElementById('clearExpensesBtn').addEventListener('click', async () => {
     const ok = await showConfirm('¿Borrar todo el historial de esta quincena?\nEl saldo se recalculará.');
     if (!ok) return;
-    // FIXED: recalcular balance desde ingresos extras en lugar de asumir = sueldo
     const extraTotal = expenses
       .filter(e => e.amount < 0)
       .reduce((sum, e) => sum - e.amount, 0);
@@ -996,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Historial limpiado. Saldo recalculado ✓', 'info');
   });
 
-  // ── Reset saldo ──
+  // Reset saldo
   document.getElementById('resetBalanceBtn').addEventListener('click', async () => {
     const ok = await showConfirm('¿Poner el saldo real a $0?');
     if (!ok) return;
@@ -1007,12 +1014,12 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Saldo reiniciado a $0', 'warning');
   });
 
-  // ── Agregar servicio ──
+  // Agregar servicio
   document.getElementById('addServiceBtn').addEventListener('click', () => {
-    const name   = document.getElementById('serviceName').value.trim();
+    const name = document.getElementById('serviceName').value.trim();
     const amount = parseFloat(document.getElementById('serviceAmount').value);
-    const cat    = document.getElementById('serviceCategory').value;
-    const day    = parseInt(document.getElementById('serviceDueDay').value);
+    const cat = document.getElementById('serviceCategory').value;
+    const day = parseInt(document.getElementById('serviceDueDay').value);
     if (!name || isNaN(amount) || amount <= 0 || isNaN(day) || day < 1 || day > 31) {
       showToast('Datos del servicio no válidos', 'error');
       return;
@@ -1020,13 +1027,13 @@ document.addEventListener('DOMContentLoaded', () => {
     services.push({ id: Date.now(), name, amount, category: cat, dueDay: day });
     saveToLocalStorage();
     refreshUI();
-    document.getElementById('serviceName').value    = '';
-    document.getElementById('serviceAmount').value  = '';
-    document.getElementById('serviceDueDay').value  = '';
+    document.getElementById('serviceName').value = '';
+    document.getElementById('serviceAmount').value = '';
+    document.getElementById('serviceDueDay').value = '';
     showToast(`${name} agregado ✓`, 'success');
   });
 
-  // ── Filter chips en historial ──
+  // Filtros
   document.querySelectorAll('.filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
@@ -1035,5 +1042,4 @@ document.addEventListener('DOMContentLoaded', () => {
       renderExpenseList();
     });
   });
-
 });
